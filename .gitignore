@@ -1,7 +1,7 @@
 # Development
 /dev
 DIRECTIVE.md
-
+DIRECTIVES.md
 
 # Rust/Cargo Build Artifacts
 /target/
