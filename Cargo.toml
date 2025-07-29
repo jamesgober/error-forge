@@ -23,8 +23,7 @@ keywords = [
 categories = [
     "rust-patterns",
     "development-tools::debugging",
-    "data-structures",
-    "error-handling"
+    "data-structures"
 ]
 
 documentation = "https://docs.rs/error-forge"
