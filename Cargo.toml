@@ -1,6 +1,6 @@
 [package]
 name = "error-forge"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 readme = "README.md"
 license = "Apache-2.0"
@@ -36,9 +36,3 @@ thiserror = "1.0"
 
 [features]
 serde = []
-
-[[test]]
-name = "tests"
-path = "tests/display.rs"
-harness = true
-
