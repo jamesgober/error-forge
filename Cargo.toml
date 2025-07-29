@@ -1,0 +1,37 @@
+[package]
+name = "error-forge"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "Apache-2.0"
+license-file = "LICENSE"
+
+authors = [
+    "James Gober <code@jamesgober.dev>"
+]
+
+description = "A flexible, high-performance Rust error framework for defining, formatting, chaining, and managing rich custom errors across large-scale applications."
+
+keywords = [
+    "error",
+    "error-handling",
+    "rust",
+    "framework",
+    "custom-errors"
+]
+
+categories = [
+    "rust-patterns",
+    "development-tools::debugging",
+    "data-structures",
+    "error-handling"
+]
+
+documentation = "https://docs.rs/error-forge"
+repository = "https://github.com/jamesgober/error-forge"
+homepage = "https://github.com/jamesgober/error-forge"
+
+
+
+[dependencies]
+thiserror = "1.0"
