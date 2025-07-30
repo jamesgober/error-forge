@@ -31,7 +31,7 @@
 ### Install Manually
 ```toml
 [dependencies]
-error-forge = "0.6.1"
+error-forge = "0.6.2"
 ```
 
 ### Install Using Cargo

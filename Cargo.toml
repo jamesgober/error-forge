@@ -1,6 +1,6 @@
 [package]
 name = "error-forge"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 readme = "README.md"
 license = "Apache-2.0"
@@ -29,11 +29,20 @@ documentation = "https://docs.rs/error-forge"
 repository = "https://github.com/jamesgober/error-forge"
 homepage = "https://github.com/jamesgober/error-forge"
 
+# Configuration for docs.rs
+[package.metadata.docs.rs]
+# Enable all features when building docs
+all-features = true
+# Enable specific features for documentation
+features = ["derive", "serde", "console", "backtrace"]
+# Set specific rustdoc flags
+rustdoc-args = ["--cfg", "docsrs"]
+
 
 [dependencies]
 thiserror = "1.0"
 paste = "1.0"
-error-forge-derive = {version = "0.2.0", path = "./error-forge-derive", optional = true }
+error-forge-derive = {version = "0.2.1", path = "./error-forge-derive", optional = true }
 
 [features]
 default = []
@@ -47,7 +56,3 @@ members = ["error-forge-derive"]
 
 [dev-dependencies]
 serde_json = "1.0"
-
-[package.metadata.docs.rs]
-features = ["derive", "serde", "console", "backtrace"]
-rustdoc-args = ["--cfg", "docsrs"]

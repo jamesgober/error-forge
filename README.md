@@ -35,7 +35,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-error-forge = "0.6.1"
+error-forge = "0.6.2"
 ```
 
 ## Usage
