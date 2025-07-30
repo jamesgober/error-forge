@@ -1,20 +1,85 @@
+/// Error hook types for centralized error handling
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ErrorLevel {
+    /// Information-level errors (least severe)
+    Info,
+    /// Warning-level errors (moderate severity)
+    Warning,
+    /// Error-level errors (high severity)
+    Error,
+    /// Critical-level errors (most severe)
+    Critical,
+}
+
+/// Error context passed to registered hooks
+pub struct ErrorContext<'a> {
+    /// The error caption
+    pub caption: &'a str,
+    /// The error kind
+    pub kind: &'a str,
+    /// The error level
+    pub level: ErrorLevel,
+    /// Whether the error is fatal
+    pub is_fatal: bool,
+    /// Whether the error can be retried
+    pub is_retryable: bool,
+}
+
 /// Global error hook for centralized error handling
-static mut ERROR_HOOK: Option<fn(&str)> = None;
+static mut ERROR_HOOK: Option<fn(ErrorContext)> = None;
 
 /// Register a callback function to be called when errors are created
 /// 
+/// # Example
+/// 
+/// ```
+/// use error_forge::{AppError, macros::{register_error_hook, ErrorLevel, ErrorContext}};
+/// 
+/// // Setup logging with different levels
+/// register_error_hook(|ctx| {
+///     match ctx.level {
+///         ErrorLevel::Critical => println!("CRITICAL: {} ({})", ctx.caption, ctx.kind),
+///         ErrorLevel::Error => println!("ERROR: {} ({})", ctx.caption, ctx.kind),
+///         ErrorLevel::Warning => println!("WARNING: {} ({})", ctx.caption, ctx.kind),
+///         ErrorLevel::Info => println!("INFO: {} ({})", ctx.caption, ctx.kind),
+///     }
+///     
+///     // Optional: send notifications for critical errors
+///     if ctx.level == ErrorLevel::Critical || ctx.is_fatal {
+///         // send_notification("Critical error occurred", ctx.caption);
+///     }
+/// });
+/// ```
+/// 
 /// # Safety
 /// This function is unsafe because it modifies a global static variable
-pub fn register_error_hook(callback: fn(&str)) {
+pub fn register_error_hook(callback: fn(ErrorContext)) {
     unsafe { ERROR_HOOK = Some(callback); }
 }
 
-/// Call the registered error hook with a message if one is registered
+/// Call the registered error hook with error context if one is registered
 #[doc(hidden)]
-pub fn call_error_hook(message: &str) {
+pub fn call_error_hook(caption: &str, kind: &str, is_fatal: bool, is_retryable: bool) {
     unsafe {
         if let Some(hook) = ERROR_HOOK {
-            hook(message);
+            // Determine error level based on error properties
+            let level = if is_fatal {
+                ErrorLevel::Critical
+            } else if !is_retryable {
+                ErrorLevel::Error
+            } else if kind == "Warning" {
+                ErrorLevel::Warning
+            } else {
+                ErrorLevel::Info
+            };
+            
+            hook(ErrorContext {
+                caption,
+                kind,
+                level,
+                is_fatal,
+                is_retryable,
+            });
         }
     }
 }
@@ -46,7 +111,12 @@ macro_rules! define_errors {
                             #[allow(unsafe_code)]
                             unsafe {
                                 if let Some(hook) = $crate::macros::ERROR_HOOK {
-                                    let _ = hook(instance.caption());
+                                    $crate::macros::call_error_hook(
+                                        instance.caption(), 
+                                        instance.kind(), 
+                                        instance.is_fatal(),
+                                        instance.is_retryable()
+                                    );
                                 }
                             }
                             instance

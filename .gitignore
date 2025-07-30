@@ -2,6 +2,7 @@
 /dev
 DIRECTIVE.md
 DIRECTIVES.md
+PLANNING.md
 
 # Rust/Cargo Build Artifacts
 /target/

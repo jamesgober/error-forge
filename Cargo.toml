@@ -1,6 +1,6 @@
 [package]
 name = "error-forge"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 readme = "README.md"
 license = "Apache-2.0"
@@ -30,12 +30,10 @@ repository = "https://github.com/jamesgober/error-forge"
 homepage = "https://github.com/jamesgober/error-forge"
 
 
-
 [dependencies]
 thiserror = "1.0"
 paste = "1.0"
 error-forge-derive = {version = "0.1.0", path = "./error-forge-derive", optional = true }
-
 
 [features]
 default = []

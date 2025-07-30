@@ -55,7 +55,7 @@ pub trait ForgeError: std::error::Error + Send + Sync + 'static {
     
     /// Registers the error with the central error registry
     fn register(&self) {
-        crate::macros::call_error_hook(self.caption());
+        crate::macros::call_error_hook(self.caption(), self.kind(), self.is_fatal(), self.is_retryable());
     }
 }
 
@@ -153,28 +153,28 @@ impl AppError {
     /// Create a new Config error
     pub fn config(message: impl Into<String>) -> Self {
         let instance = Self::Config { message: message.into() };
-        crate::macros::call_error_hook(instance.caption());
+        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
         instance
     }
     
     /// Create a new Filesystem error
     pub fn filesystem(path: impl Into<PathBuf>, source: io::Error) -> Self {
         let instance = Self::Filesystem { path: Some(path.into()), source };
-        crate::macros::call_error_hook(instance.caption());
+        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
         instance
     }
     
     /// Create a new Network error
     pub fn network(endpoint: impl Into<String>, source: Option<Box<dyn StdError + Send + Sync>>) -> Self {
         let instance = Self::Network { endpoint: endpoint.into(), source };
-        crate::macros::call_error_hook(instance.caption());
+        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
         instance
     }
     
     /// Create a new generic error
     pub fn other(message: impl Into<String>) -> Self {
         let instance = Self::Other { message: message.into() };
-        crate::macros::call_error_hook(instance.caption());
+        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
         instance
     }
 }
