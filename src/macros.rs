@@ -1,7 +1,22 @@
+/// Global error hook for centralized error handling
 static mut ERROR_HOOK: Option<fn(&str)> = None;
 
+/// Register a callback function to be called when errors are created
+/// 
+/// # Safety
+/// This function is unsafe because it modifies a global static variable
 pub fn register_error_hook(callback: fn(&str)) {
     unsafe { ERROR_HOOK = Some(callback); }
+}
+
+/// Call the registered error hook with a message if one is registered
+#[doc(hidden)]
+pub fn call_error_hook(message: &str) {
+    unsafe {
+        if let Some(hook) = ERROR_HOOK {
+            hook(message);
+        }
+    }
 }
 
 #[macro_export]
@@ -9,7 +24,9 @@ macro_rules! define_errors {
     (
         $(
             $(#[$meta:meta])* $vis:vis enum $name:ident {
-                $( #[kind($kind:ident $(, $($tag:ident = $val:expr),* )?)]
+                $( 
+                   $(#[error(display = $display:literal $(, $($display_param:ident),* )?)])?
+                   #[kind($kind:ident $(, $($tag:ident = $val:expr),* )?)]
                    $variant:ident $( { $($field:ident : $ftype:ty),* $(,)? } )?, )*
             }
         )*
@@ -41,6 +58,14 @@ macro_rules! define_errors {
                     match self {
                         $( Self::$variant { .. } => {
                             define_errors!(@get_caption $kind $(, $($tag = $val),* )?)
+                        } ),*
+                    }
+                }
+                
+                pub fn kind(&self) -> &'static str {
+                    match self {
+                        $( Self::$variant { .. } => {
+                            stringify!($kind)
                         } ),*
                     }
                 }
@@ -82,9 +107,24 @@ macro_rules! define_errors {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     match self {
                         $( Self::$variant $( { $($field),* } )? => {
+                            $(                                
+                                #[allow(unused_variables)]
+                                if let Some(display) = define_errors!(@format_display $display $(, $($display_param),*)?) {
+                                    return write!(f, "{}", display);
+                                }
+                            )?
+                            // If no custom display format is provided, use a default format
                             write!(f, "{}: ", self.caption())?;
                             write!(f, stringify!($variant))?;
-                            $( $( write!(f, " | {} = {:?}", stringify!($field), $field)?; )* )?
+                            // Format each field with name=value
+                            $( $( 
+                                write!(f, " | {} = ", stringify!($field))?
+                                ;
+                                match stringify!($field) {
+                                    "source" => write!(f, "{}", $field)?,
+                                    _ => write!(f, "{:?}", $field)?,
+                                }
+                            ; )* )?
                             Ok(())
                         } ),*
                     }
@@ -103,18 +143,29 @@ macro_rules! define_errors {
         )*
     };
 
-    (@find_source $($field:ident),*) => {
+    (@find_source) => {
+        None
+    };
+    
+    (@find_source $field:ident) => {
         {
-            let mut result = None;
-            $(
-                if result.is_none() {
-                    let val = $field;
-                    if let Some(err) = (val as &dyn std::any::Any).downcast_ref::<&(dyn std::error::Error + 'static)>() {
-                        result = Some(*err);
-                    }
-                }
-            )*
-            result
+            let val = $field;
+            if let Some(err) = (val as &dyn std::any::Any).downcast_ref::<&(dyn std::error::Error + 'static)>() {
+                Some(*err)
+            } else {
+                None
+            }
+        }
+    };
+    
+    (@find_source $field:ident, $($rest:ident),+) => {
+        {
+            let val = $field;
+            if let Some(err) = (val as &dyn std::any::Any).downcast_ref::<&(dyn std::error::Error + 'static)>() {
+                Some(*err)
+            } else {
+                define_errors!(@find_source $($rest),+)
+            }
         }
     };
 
@@ -132,5 +183,27 @@ macro_rules! define_errors {
             $( $( if stringify!($tag) == stringify!($target) { found = $val; })* )?
             found
         }
+    };
+    
+    (@format_display $display:literal $(, $($param:ident),*)?) => {
+        {
+            // When parameters are provided, use them for formatting
+            $(
+                Some(format!($display, $($param = $param),*))
+            )?
+            // When no parameters are provided, just use the literal string
+            $(
+                Some($display.to_string())
+            )?
+        }
+    };
+
+    // Support for nested field access in error display formatting
+    (@format_display_field $field:ident) => {
+        $field
+    };
+
+    (@format_display_field $field:ident . $($rest:ident).+) => {
+        $field$(.$rest)+
     };
 }

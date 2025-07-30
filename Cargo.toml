@@ -1,6 +1,6 @@
 [package]
 name = "error-forge"
-version = "0.2.1"
+version = "0.4.0"
 edition = "2021"
 readme = "README.md"
 license = "Apache-2.0"
@@ -33,6 +33,22 @@ homepage = "https://github.com/jamesgober/error-forge"
 
 [dependencies]
 thiserror = "1.0"
+paste = "1.0"
+error-forge-derive = { path = "./error-forge-derive", optional = true }
 
 [features]
+default = []
 serde = []
+derive = ["error-forge-derive"]
+console = []
+backtrace = []
+
+[workspace]
+members = ["error-forge-derive"]
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[package.metadata.docs.rs]
+features = ["derive", "serde", "console", "backtrace"]
+rustdoc-args = ["--cfg", "docsrs"]
