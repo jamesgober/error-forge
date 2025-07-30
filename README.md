@@ -14,9 +14,7 @@
 </div>
 <br>
 
-# Error Forge
-
-Error Forge is a comprehensive, zero-dependency error management framework for Rust applications. It simplifies error handling through expressive macros, automatic trait implementations, and extensible error hooks for seamless integration with external logging systems.
+**Error Forge** is a comprehensive, zero-dependency error management framework for Rust applications. It simplifies error handling through expressive macros, automatic trait implementations, and extensible error hooks for seamless integration with external logging systems.
 
 ## Features
 
@@ -35,7 +33,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-error-forge = "0.6.2"
+error-forge = "0.6.3"
 ```
 
 ## Usage

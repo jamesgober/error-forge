@@ -32,7 +32,7 @@ static mut ERROR_HOOK: Option<fn(ErrorContext)> = None;
 /// 
 /// # Example
 /// 
-/// ```
+/// ```rust
 /// use error_forge::{AppError, macros::{register_error_hook, ErrorLevel, ErrorContext}};
 /// 
 /// // Setup logging with different levels

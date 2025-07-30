@@ -4,10 +4,11 @@ version = 4
 
 [[package]]
 name = "error-forge"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "error-forge-derive",
  "paste",
+ "serde",
  "serde_json",
  "thiserror",
 ]

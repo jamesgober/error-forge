@@ -5,7 +5,7 @@ use std::error::Error as StdError;
 use std::backtrace::Backtrace;
 
 #[cfg(feature = "serde")]
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 
 /// Type alias for error-forge results.
 pub type Result<T> = std::result::Result<T, crate::error::AppError>;
@@ -61,16 +61,16 @@ pub trait ForgeError: std::error::Error + Send + Sync + 'static {
 
 /// Example error enum that can be replaced by the define_errors! macro.
 #[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub enum AppError {
     /// Configuration-related errors
     Config { message: String },
     
     /// Filesystem-related errors with optional path and source error
-    Filesystem { path: Option<PathBuf>, source: io::Error },
+    Filesystem { path: Option<PathBuf>, #[cfg_attr(feature = "serde", serde(skip))] source: io::Error },
     
     /// Network-related errors
-    Network { endpoint: String, source: Option<Box<dyn StdError + Send + Sync>> },
+    Network { endpoint: String, #[cfg_attr(feature = "serde", serde(skip))] source: Option<Box<dyn StdError + Send + Sync>> },
     
     /// Generic errors for anything not covered by specific variants
     Other { message: String },
