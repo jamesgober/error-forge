@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "error-forge"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "error-forge-derive",
  "paste",
@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "error-forge-derive"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
