@@ -2,7 +2,7 @@
    <img width="120px" height="auto" src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/icons/hexagon-3.svg" alt="Triple Hexagon">
     <h1>
         <strong>Error Forge</strong>
-        <sup><br><sub>CUSTOM ERROR FRAMEWORK</sub><br></sup>
+        <sup><br><sub>RUST ERROR FRAMEWORK</sub><br></sup>
     </h1>
         <a href="https://crates.io/crates/error-forge" alt="Error-Protocol on Crates.io"><img alt="Crates.io" src="https://img.shields.io/crates/v/error-forge"></a>
         <span>&nbsp;</span>
