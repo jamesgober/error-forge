@@ -10,24 +10,29 @@ use syn::{parse_macro_input, DeriveInput, Data, Fields};
 /// "lazy mode" error creation with minimal boilerplate.
 ///
 /// # Example
-///
-/// ```rust
+/// 
+/// When the macro is used in your application where error-forge is a dependency:
+/// 
+/// ```ignore
 /// use error_forge::ModError;
-///
+/// 
 /// #[derive(Debug, ModError)]
 /// #[error_prefix("Database")]
 /// pub enum DbError {
 ///     #[error_display("Connection to {0} failed")]
 ///     ConnectionFailed(String),
-///
+/// 
 ///     #[error_display("Query execution failed: {reason}")]
 ///     QueryFailed { reason: String },
-///
+/// 
 ///     #[error_display("Transaction error")]
 ///     #[error_http_status(400)]
 ///     TransactionError,
 /// }
 /// ```
+///
+/// Note: This is a procedural macro that is re-exported by the `error-forge` crate.
+/// When using in your application, import it from the main crate with `use error_forge::ModError;`.
 #[proc_macro_derive(ModError, attributes(error_prefix, error_display, error_kind,
                                          error_caption, error_retryable, error_http_status,
                                          error_exit_code))]
