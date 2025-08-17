@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Async error handling support via `AsyncForgeError` trait
+- Integration with `async-trait` for async error handling in async contexts
+- New async utilities like `from_async_result` and `async_handle` methods
+- Retry logic with async support in examples
 
 ### Changed
 

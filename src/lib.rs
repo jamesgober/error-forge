@@ -66,6 +66,11 @@ pub mod registry;
 pub mod collector;
 pub mod logging;
 
+#[cfg(feature = "async")]
+pub mod async_error;
+#[cfg(feature = "async")]
+pub mod async_error_impl;
+
 // Re-export core types and traits
 pub use crate::error::{ForgeError, Result, AppError};
 pub use crate::console_theme::{ConsoleTheme, print_error, install_panic_hook};
@@ -81,6 +86,10 @@ pub use crate::collector::{ErrorCollector, CollectError};
 
 // Re-export logging module
 pub use crate::logging::{ErrorLogger, register_logger, log_error, logger};
+
+// Re-export async module (when enabled)
+#[cfg(feature = "async")]
+pub use crate::async_error::{AsyncForgeError, AsyncResult};
 
 #[cfg(feature = "serde")]
 extern crate serde;
