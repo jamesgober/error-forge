@@ -12,6 +12,7 @@
 - [Installation](#installation)
 - [Core Traits and Types](#core-traits-and-types)
   - [ForgeError Trait](#forgeerror-trait)
+  - [AsyncForgeError Trait](#asyncforgeerror-trait)
   - [Result Type](#result-type)
 - [Macros](#macros)
   - [define_errors!](#define_errors)
@@ -30,6 +31,14 @@
   - [Error Codes](#error-codes)
 - [Error Collection](#error-collection)
   - [ErrorCollector](#errorcollector)
+- [Error Recovery](#error-recovery)
+  - [Backoff Strategies](#backoff-strategies)
+  - [Circuit Breaker](#circuit-breaker)
+  - [Retry Policy](#retry-policy)
+  - [ForgeErrorRecovery](#forgeerrorrecovery)
+- [Async Support](#async-support)
+  - [Async Error Handling](#async-error-handling)
+  - [Async Utilities](#async-utilities)
 - [Examples](#examples)
 
 <br><br>
@@ -39,7 +48,7 @@
 ### Install Manually
 ```toml
 [dependencies]
-error-forge = "0.9.0"
+error-forge = "0.9.6"
 ```
 
 ### Install Using Cargo
@@ -108,6 +117,85 @@ fn example() -> Result<(), Box<dyn ForgeError>> {
     println!("Status code: {}", error.status_code());  // 503
     
     Err(Box::new(error))
+}
+```
+
+### AsyncForgeError Trait
+
+`AsyncForgeError` extends the `ForgeError` trait to support asynchronous error handling in async contexts.
+
+**Signature:**
+```rust
+#[async_trait]
+pub trait AsyncForgeError: ForgeError {
+    async fn from_async_result<T, E>(result: Result<T, E>) -> Result<T, Self>
+    where
+        E: std::error::Error + Send + 'static;
+        
+    async fn async_handle<F, T>(self, handler: F) -> Result<T, Self>
+    where
+        F: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, Self>> + Send>> + Send,
+        T: Send;
+}
+```
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `from_async_result` | `result: Result<T, E>` | `Result<T, Self>` | Converts an async result to the implementing error type |
+| `async_handle` | `handler: F` | `Result<T, Self>` | Handles an error in an async context with the provided handler |
+
+**Example:**
+```rust
+use error_forge::{define_errors, AsyncForgeError};
+use async_trait::async_trait;
+
+define_errors! {
+    pub enum ApiError {
+        #[error(display = "Request to {} failed: {}", endpoint, message)]
+        #[kind(Request, retryable = true, status = 502)]
+        RequestFailed { endpoint: String, message: String },
+    }
+}
+
+#[async_trait]
+impl AsyncForgeError for ApiError {
+    // Implementation provided by the macro
+}
+
+async fn fetch_data(url: &str) -> Result<String, ApiError> {
+    // Some HTTP request that might fail
+    let response = reqwest::get(url).await
+        .map_err(|e| ApiError::request_failed(url.to_string(), e.to_string()))?;
+        
+    if response.status().is_success() {
+        let body = response.text().await
+            .map_err(|e| ApiError::request_failed(url.to_string(), e.to_string()))?;
+        Ok(body)
+    } else {
+        Err(ApiError::request_failed(
+            url.to_string(),
+            format!("Status: {}", response.status())
+        ))
+    }
+}
+
+async fn process_with_retry(url: &str) -> Result<String, ApiError> {
+    let result = fetch_data(url).await;
+    
+    // Handle the error with retry logic
+    if let Err(err) = result {
+        if err.is_retryable() {
+            println!("Retrying request to {}...", url);
+            // Wait and retry
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            return fetch_data(url).await;
+        }
+        return Err(err);
+    }
+    
+    result
 }
 ```
 
@@ -624,6 +712,351 @@ fn validate_form(form: &Form) -> Result<(), ValidationError> {
     
     // Return all collected errors at once
     collector.into_result()
+}
+```
+
+## Error Recovery
+
+Error Forge provides resilience patterns for handling errors in production systems, including retry policies with various backoff strategies and circuit breakers to prevent cascading failures.
+
+### Backoff Strategies
+
+Backoff strategies determine how long to wait between retry attempts.
+
+**Backoff Trait:**
+
+```rust
+pub trait Backoff: Send + Sync + 'static {
+    fn next_delay(&self, attempt: usize) -> Duration;
+}
+```
+
+**Available Implementations:**
+
+| Strategy | Description |
+|----------|-------------|
+| `ExponentialBackoff` | Increases delay exponentially based on attempt number with optional jitter |
+| `LinearBackoff` | Increases delay linearly based on attempt number with optional jitter |
+| `FixedBackoff` | Uses a constant delay between retry attempts with optional jitter |
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `with_initial_delay()` | `delay_ms: u64` | `Self` | Sets the initial delay in milliseconds |
+| `with_max_delay()` | `max_delay_ms: u64` | `Self` | Sets the maximum delay in milliseconds |
+| `with_factor()` | `factor: f64` | `Self` | Sets the multiplication factor (for exponential/linear) |
+| `with_jitter()` | `jitter: f64` | `Self` | Sets jitter factor (0.0-1.0) to randomize delays |
+
+**Example:**
+```rust
+use error_forge::recovery::{ExponentialBackoff, LinearBackoff, FixedBackoff, Backoff};
+use std::time::Duration;
+
+// Exponential backoff: 100ms, 200ms, 400ms, 800ms, ...
+let exp_backoff = ExponentialBackoff::new()
+    .with_initial_delay(100)
+    .with_max_delay(10000)
+    .with_factor(2.0)
+    .with_jitter(0.1);
+
+// Linear backoff: 100ms, 200ms, 300ms, 400ms, ...
+let linear_backoff = LinearBackoff::new()
+    .with_initial_delay(100)
+    .with_max_delay(5000)
+    .with_factor(100)
+    .with_jitter(0.05);
+
+// Fixed backoff: 200ms, 200ms, 200ms, ...
+let fixed_backoff = FixedBackoff::new()
+    .with_delay(200)
+    .with_jitter(0.1);
+
+// Using the backoff strategies
+let delay1 = exp_backoff.next_delay(0);  // ~100ms (with jitter)
+let delay2 = exp_backoff.next_delay(1);  // ~200ms (with jitter)
+let delay3 = exp_backoff.next_delay(2);  // ~400ms (with jitter)
+```
+
+### Circuit Breaker
+
+Circuit Breaker prevents repeated calls to failing operations and allows the system to recover.
+
+**States:**
+
+| State | Description |
+|-------|-------------|
+| `Closed` | Normal operation, calls pass through |
+| `Open` | Circuit is tripped, calls fail fast |
+| `HalfOpen` | Testing if the system has recovered |
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `new()` | `config: CircuitBreakerConfig` | `CircuitBreaker` | Creates a new circuit breaker with configuration |
+| `execute()` | `operation: F` | `Result<T, E>` | Executes an operation through the circuit breaker |
+| `state()` | None | `CircuitState` | Returns the current state of the circuit breaker |
+| `reset()` | None | `()` | Resets the circuit breaker to the closed state |
+
+**CircuitBreakerConfig:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `default()` | None | `CircuitBreakerConfig` | Creates a default configuration |
+| `with_failure_threshold()` | `threshold: u32` | `Self` | Number of failures before opening |
+| `with_success_threshold()` | `threshold: u32` | `Self` | Number of successes in half-open before closing |
+| `with_reset_timeout()` | `timeout: Duration` | `Self` | Time before transitioning from open to half-open |
+
+**Example:**
+```rust
+use error_forge::recovery::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
+use std::time::Duration;
+
+// Create a circuit breaker configuration
+let config = CircuitBreakerConfig::default()
+    .with_failure_threshold(3)   // Open after 3 consecutive failures
+    .with_success_threshold(2)   // Close after 2 consecutive successes in half-open
+    .with_reset_timeout(Duration::from_secs(30));  // Try again after 30 seconds
+
+// Create a circuit breaker
+let circuit_breaker = CircuitBreaker::new(config);
+
+// Execute an operation through the circuit breaker
+let result = circuit_breaker.execute(|| {
+    // Operation that might fail
+    database_operation()
+});
+
+// Check the current state
+if circuit_breaker.state() == CircuitState::Open {
+    println!("Circuit is open, service is unavailable");
+}
+```
+
+### Retry Policy
+
+Retry Policy combines predicate logic with backoff strategies for controlled retries.
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `new_exponential()` | None | `RetryPolicy` | Creates a new policy with exponential backoff |
+| `new_linear()` | None | `RetryPolicy` | Creates a new policy with linear backoff |
+| `new_fixed()` | None | `RetryPolicy` | Creates a new policy with fixed backoff |
+| `with_max_retries()` | `max_retries: usize` | `Self` | Sets the maximum number of retry attempts |
+| `with_initial_delay()` | `delay_ms: u64` | `Self` | Sets the initial delay in milliseconds |
+| `with_max_delay()` | `delay_ms: u64` | `Self` | Sets the maximum delay in milliseconds |
+| `with_jitter()` | `jitter: f64` | `Self` | Sets jitter factor (0.0-1.0) to randomize delays |
+| `with_predicate()` | `predicate: P` | `Self` | Sets a retry predicate function |
+| `forge_executor()` | None | `RetryExecutor<E>` | Gets an executor to run operations with this policy |
+
+**RetryExecutor:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `retry()` | `operation: F` | `Result<T, E>` | Runs an operation with retries based on the policy |
+
+**Example:**
+```rust
+use error_forge::recovery::RetryPolicy;
+use std::{thread, time::Duration};
+
+// Create a retry policy with exponential backoff
+let retry_policy = RetryPolicy::new_exponential()
+    .with_max_retries(3)
+    .with_initial_delay(100)
+    .with_max_delay(5000)
+    .with_jitter(0.1)
+    .with_predicate(|err: &MyError| err.is_retryable());
+
+// Execute an operation with retries
+let result = retry_policy.forge_executor().retry(|| {
+    // Operation that might fail
+    make_http_request("https://api.example.com")
+});
+
+// For async operations
+let result = async {
+    retry_policy.forge_executor().retry(|| async {
+        make_async_http_request("https://api.example.com").await
+    }).await
+}.await;
+```
+
+### ForgeErrorRecovery
+
+Extension trait that adds recovery capabilities to `ForgeError` types.
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `create_retry_policy()` | `max_retries: usize` | `RetryPolicy` | Creates a retry policy optimized for this error type |
+| `retry()` | `max_retries: usize, operation: F` | `Result<T, E>` | Executes a fallible operation with retries |
+
+**Example:**
+```rust
+use error_forge::{define_errors, recovery::ForgeErrorRecovery};
+
+define_errors! {
+    pub enum ServiceError {
+        #[error(display = "Request failed: {}", message)]
+        #[kind(Request, retryable = true, status = 500)]
+        RequestFailed { message: String },
+        
+        #[error(display = "Timeout: {}", message)]
+        #[kind(Timeout, retryable = true, status = 504)]
+        Timeout { message: String },
+    }
+}
+
+// Implement the recovery trait
+impl ForgeErrorRecovery for ServiceError {}
+
+// Using the retry capabilities
+fn make_request_with_retry() -> Result<String, ServiceError> {
+    // Create a dummy error to use its retry method
+    let error_template = ServiceError::request_failed("Template");
+    
+    // Retry the operation up to 3 times
+    error_template.retry(3, || {
+        match make_service_call() {
+            Ok(response) => Ok(response),
+            Err(e) => Err(ServiceError::request_failed(e.to_string()))
+        }
+    })
+}
+
+fn make_service_call() -> Result<String, std::io::Error> {
+    // Simulated service call
+    Ok("Response data".to_string())
+}
+```
+
+<br>
+
+## Async Support
+
+Error Forge provides comprehensive support for asynchronous error handling in async Rust applications.
+
+### Async Error Handling
+
+The async error handling system is built around the `AsyncForgeError` trait (which extends `ForgeError`) and integrates with the `async-trait` crate for seamless async/await support.
+
+**Core Components:**
+
+| Component | Description |
+|-----------|-------------|
+| `AsyncForgeError` trait | Base trait for async error handling |
+| `from_async_result` method | Converts async results to error types |
+| `async_handle` method | Processes errors in an async context |
+
+**Implementing AsyncForgeError:**
+
+```rust
+use error_forge::{define_errors, AsyncForgeError};
+use async_trait::async_trait;
+
+define_errors! {
+    pub enum AsyncError {
+        #[error(display = "Database error: {}", message)]
+        #[kind(Database, retryable = true, status = 503)]
+        DbError { message: String },
+    }
+}
+
+// The AsyncForgeError implementation is automatically generated when
+// you use define_errors! with async enabled in your features
+#[async_trait]
+impl AsyncForgeError for AsyncError {}
+```
+
+### Async Utilities
+
+Error Forge provides utilities specifically designed for async contexts.
+
+**Key Async Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `async_handle` | Processes errors in an async context with a handler function |
+| `from_async_result` | Converts an async Result into your error type |
+
+**Working with Async Results:**
+
+```rust
+use error_forge::{define_errors, AsyncForgeError};
+use async_trait::async_trait;
+
+define_errors! {
+    pub enum ApiError {
+        #[error(display = "API request failed: {}", message)]
+        #[kind(Api, retryable = true, status = 502)]
+        RequestFailed { message: String },
+    }
+}
+
+#[async_trait]
+impl AsyncForgeError for ApiError {}
+
+async fn fetch_external_data() -> Result<String, reqwest::Error> {
+    // External API call that returns a Result
+    reqwest::get("https://api.example.com/data").await?.text().await
+}
+
+async fn process_data() -> Result<String, ApiError> {
+    // Convert external error type to our ApiError
+    let data = ApiError::from_async_result(fetch_external_data().await)
+        .await?
+        .trim()
+        .to_string();
+    
+    Ok(data)
+}
+```
+
+**Combining with Recovery Patterns:**
+
+```rust
+use error_forge::{define_errors, AsyncForgeError, recovery::ForgeErrorRecovery};
+use async_trait::async_trait;
+
+define_errors! {
+    pub enum NetworkError {
+        #[error(display = "Connection failed: {}", message)]
+        #[kind(Connection, retryable = true, status = 503)]
+        ConnectionFailed { message: String },
+    }
+}
+
+#[async_trait]
+impl AsyncForgeError for NetworkError {}
+impl ForgeErrorRecovery for NetworkError {}
+
+async fn fetch_with_retry() -> Result<String, NetworkError> {
+    // Create retry policy with exponential backoff
+    let retry_policy = NetworkError::connection_failed("dummy")
+        .create_retry_policy(3)
+        .with_initial_delay(100)
+        .with_max_delay(2000)
+        .with_jitter(0.2);
+    
+    // Use retry policy with async operation
+    retry_policy.forge_executor()
+        .retry(|| async {
+            match make_request().await {
+                Ok(data) => Ok(data),
+                Err(e) => Err(NetworkError::connection_failed(e.to_string()))
+            }
+        })
+        .await
+}
+
+async fn make_request() -> Result<String, std::io::Error> {
+    // Simulated async network request
+    Ok("Response data".to_string())
 }
 ```
 

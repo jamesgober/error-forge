@@ -1,6 +1,6 @@
 [package]
 name = "error-forge"
-version = "0.9.0"
+version = "0.9.6"
 edition = "2021"
 readme = "README.md"
 license = "Apache-2.0"
@@ -9,19 +9,20 @@ authors = [
     "James Gober <codeca@jamesgober.dev>"
 ]
 
-description = "A flexible, high-performance Rust error framework for defining, formatting, chaining, and managing rich custom errors across large-scale applications."
+description = "A comprehensive Rust error management framework with async support, error recovery patterns, and resilience features for building robust, fault-tolerant applications with rich error handling, formatting, and tracing capabilities."
 
 keywords = [
     "error",
     "error-handling",
-    "logging",
-    "framework",
-    "custom-errors"
+    "async",
+    "resilience",
+    "circuit-breaker"
 ]
 
 categories = [
     "rust-patterns",
     "development-tools::debugging",
+    "asynchronous",
     "development-tools"
 ]
 

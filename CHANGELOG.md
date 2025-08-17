@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.9.6] - 2025-08-17
+
+### Added
 - Async error handling support via `AsyncForgeError` trait
 - Integration with `async-trait` for async error handling in async contexts
 - New async utilities like `from_async_result` and `async_handle` methods
@@ -17,10 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Circuit breaker pattern to prevent cascading failures
   - Retry policy framework with custom predicates and backoff support
   - `ForgeErrorRecovery` extension trait for all `ForgeError` types
-
-### Changed
-
-### Fixed
 
 ## [0.9.0] - 2025-08-17
 
@@ -71,6 +75,7 @@ Initial public release with core functionality.
 - Error hook system with severity levels
 - Zero external dependencies design
 
-[Unreleased]: https://github.com/jamesgober/error-forge/compare/0.6.3...HEAD
+[Unreleased]: https://github.com/jamesgober/error-forge/compare/0.9.6...HEAD
+[0.9.6]: https://github.com/jamesgober/error-forge/compare/0.9.0...v0.9.6
 [0.9.0]: https://github.com/jamesgober/error-forge/compare/0.6.3...v0.9.0
 [0.6.3]: https://github.com/jamesgober/error-forge/compare/0.6.1...0.6.3
