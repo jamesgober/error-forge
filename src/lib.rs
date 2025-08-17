@@ -65,6 +65,7 @@ pub mod context;
 pub mod registry;
 pub mod collector;
 pub mod logging;
+pub mod recovery;
 
 #[cfg(feature = "async")]
 pub mod async_error;
