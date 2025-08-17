@@ -74,10 +74,8 @@ fn get_error_prefix(attrs: &[syn::Attribute]) -> String {
             }
             // Format: #[error_prefix("text")]
             else if let Ok(syn::Meta::List(meta)) = attr.parse_meta() {
-                if let Some(nested) = meta.nested.iter().next() {
-                    if let syn::NestedMeta::Lit(syn::Lit::Str(lit)) = nested {
-                        return lit.value();
-                    }
+                if let Some(syn::NestedMeta::Lit(syn::Lit::Str(lit))) = meta.nested.iter().next() {
+                    return lit.value();
                 }
             }
         }
