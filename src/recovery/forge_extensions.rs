@@ -5,9 +5,8 @@ use crate::recovery::{RetryPolicy, CircuitBreaker};
 pub trait ForgeErrorRecovery: ForgeError {
     /// Create a retry policy optimized for this error type
     fn create_retry_policy(&self, max_retries: usize) -> RetryPolicy {
-        let policy = RetryPolicy::new_exponential()
-            .with_max_retries(max_retries);
-        policy
+        RetryPolicy::new_exponential()
+            .with_max_retries(max_retries)
     }
 
     /// Execute a fallible operation with retries if this error type is retryable
