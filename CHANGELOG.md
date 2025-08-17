@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration with `async-trait` for async error handling in async contexts
 - New async utilities like `from_async_result` and `async_handle` methods
 - Retry logic with async support in examples
+- Comprehensive error recovery module with:
+  - Backoff strategies (Exponential, Linear, Fixed) with configurable parameters and jitter
+  - Circuit breaker pattern to prevent cascading failures
+  - Retry policy framework with custom predicates and backoff support
+  - `ForgeErrorRecovery` extension trait for all `ForgeError` types
 
 ### Changed
 
