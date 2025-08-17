@@ -54,10 +54,8 @@
 //! // Import the predefined AppError type from the library
 //! use error_forge::{console_theme::print_error, AppError};
 //!
-//! fn main() {
-//!     let error = AppError::config("Database connection failed");
-//!     print_error(&error);  // Displays a nicely formatted error message
-//! }
+//! let error = AppError::config("Database connection failed");
+//! print_error(&error);  // Displays a nicely formatted error message
 //! ```
 pub mod error;
 pub mod macros;
