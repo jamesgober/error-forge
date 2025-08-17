@@ -8,11 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.9.0] - 2025-08-17
+
+### Added
 - Cross-platform CI workflow for testing on Linux, macOS, and Windows
 - Clippy checks in CI to ensure code quality
+- Windows-specific terminal color detection
+- Automatic color disabling for non-interactive terminals
+- Thread-safe error hook system using `OnceLock` instead of `static mut`
+- Structured context support with `ContextError` type
+- Error wrapping with context via `context()` and `with_context()` methods
+- Error registry with support for error codes and documentation URLs
+- Non-fatal error collection system with `ErrorCollector`
+- Optional logging integration with support for:
+  - Custom logging implementations
+  - Integration with the `log` crate (optional)
+  - Integration with the `tracing` crate (optional)
+- Improved error chaining with source tracking
+
+### Changed
+- Replaced unsafe global mutable state with thread-safe alternatives
 
 ### Fixed
 - Fixed Clippy warnings:
+  - Removed needless doctest main function
+  - Fixed collapsible match pattern in derive macros
+  - Fixed unused variables and imports
+- Addressed deprecated `PanicInfo` usage, replaced with `PanicHookInfo`
+- Fixed thread safety test reliability issues
+- Fixed `CodedError` state tracking to properly update and report fatal flags
   - Removed collapsible match patterns in error-forge-derive crate
   - Removed unnecessary `fn main()` from doctest examples
 
@@ -34,6 +63,5 @@ Initial public release with core functionality.
 - Zero external dependencies design
 
 [Unreleased]: https://github.com/jamesgober/error-forge/compare/0.6.3...HEAD
-[0.7.0]: https://github.com/jamesgober/error-forge/compare/0.6.3...v0.7.0
+[0.9.0]: https://github.com/jamesgober/error-forge/compare/0.6.3...v0.9.0
 [0.6.3]: https://github.com/jamesgober/error-forge/compare/0.6.1...0.6.3
-1

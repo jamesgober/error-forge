@@ -25,8 +25,10 @@ pub struct ErrorContext<'a> {
     pub is_retryable: bool,
 }
 
+use std::sync::OnceLock;
+
 /// Global error hook for centralized error handling
-static mut ERROR_HOOK: Option<fn(ErrorContext)> = None;
+static ERROR_HOOK: OnceLock<fn(ErrorContext)> = OnceLock::new();
 
 /// Register a callback function to be called when errors are created
 /// 
@@ -51,36 +53,32 @@ static mut ERROR_HOOK: Option<fn(ErrorContext)> = None;
 /// });
 /// ```
 /// 
-/// # Safety
-/// This function is unsafe because it modifies a global static variable
 pub fn register_error_hook(callback: fn(ErrorContext)) {
-    unsafe { ERROR_HOOK = Some(callback); }
+    let _ = ERROR_HOOK.set(callback);
 }
 
 /// Call the registered error hook with error context if one is registered
 #[doc(hidden)]
 pub fn call_error_hook(caption: &str, kind: &str, is_fatal: bool, is_retryable: bool) {
-    unsafe {
-        if let Some(hook) = ERROR_HOOK {
-            // Determine error level based on error properties
-            let level = if is_fatal {
-                ErrorLevel::Critical
-            } else if !is_retryable {
-                ErrorLevel::Error
-            } else if kind == "Warning" {
-                ErrorLevel::Warning
-            } else {
-                ErrorLevel::Info
-            };
-            
-            hook(ErrorContext {
-                caption,
-                kind,
-                level,
-                is_fatal,
-                is_retryable,
-            });
-        }
+    if let Some(hook) = ERROR_HOOK.get() {
+        // Determine error level based on error properties
+        let level = if is_fatal {
+            ErrorLevel::Critical
+        } else if !is_retryable {
+            ErrorLevel::Error
+        } else if kind == "Warning" {
+            ErrorLevel::Warning
+        } else {
+            ErrorLevel::Info
+        };
+        
+        hook(ErrorContext {
+            caption,
+            kind,
+            level,
+            is_fatal,
+            is_retryable,
+        });
     }
 }
 
@@ -108,17 +106,13 @@ macro_rules! define_errors {
                     paste::paste! {
                         pub fn [<$variant:lower>]($($($field : $ftype),*)?) -> Self {
                             let instance = Self::$variant $( { $($field),* } )?;
-                            #[allow(unsafe_code)]
-                            unsafe {
-                                if let Some(hook) = $crate::macros::ERROR_HOOK {
-                                    $crate::macros::call_error_hook(
-                                        instance.caption(), 
-                                        instance.kind(), 
-                                        instance.is_fatal(),
-                                        instance.is_retryable()
-                                    );
-                                }
-                            }
+                            // Call the error hook - no need to directly access ERROR_HOOK here
+                            $crate::macros::call_error_hook(
+                                instance.caption(), 
+                                instance.kind(), 
+                                instance.is_fatal(),
+                                instance.is_retryable()
+                            );
                             instance
                         }
                     }

@@ -61,21 +61,41 @@ pub mod error;
 pub mod macros;
 pub mod group_macro;
 pub mod console_theme;
+pub mod context;
+pub mod registry;
+pub mod collector;
+pub mod logging;
 
 // Re-export core types and traits
 pub use crate::error::{ForgeError, Result, AppError};
 pub use crate::console_theme::{ConsoleTheme, print_error, install_panic_hook};
+
+// Re-export context module
+pub use crate::context::{ContextError, ResultExt};
+
+// Re-export registry module
+pub use crate::registry::{WithErrorCode, CodedError, register_error_code, ErrorRegistry, ErrorCodeInfo};
+
+// Re-export collector module
+pub use crate::collector::{ErrorCollector, CollectError};
+
+// Re-export logging module
+pub use crate::logging::{ErrorLogger, register_logger, log_error, logger};
 
 #[cfg(feature = "serde")]
 extern crate serde;
 
 // Re-export macros for convenient use
 #[allow(unused_imports)]
-pub use crate::group_macro::*;
+pub use crate::macros::*;
 
 // Optional re-export of the proc macro
 #[cfg(feature = "derive")]
 pub use error_forge_derive::*;
+
+// Extension methods are implemented in error.rs
+
+// Extension methods are implemented in error.rs
 
 #[cfg(test)]
 mod tests {

@@ -24,8 +24,13 @@
 - **Error Composition**: Combine errors from multiple modules with the `group!` macro
 - **Derive Macros**: Quickly implement errors with `#[derive(ModError)]`
 - **Console Formatting**: ANSI color formatting for terminal output with `ConsoleTheme`
-- **Error Hooks**: Register callbacks for errors with severity level support
-- **Zero External Dependencies**: Completely standalone with no third-party dependencies
+- **Error Hooks**: Thread-safe error hook system using `OnceLock`
+- **Structured Context**: Error wrapping with context via `context()` and `with_context()` methods
+- **Error Registry**: Support for error codes and documentation URLs
+- **Non-fatal Error Collection**: Collect and process multiple errors with `ErrorCollector`
+- **Logging Integration**: Optional integration with `log` and `tracing` crates
+- **Cross-Platform**: Full support for Linux, macOS, and Windows
+- **Zero External Dependencies**: Core functionality has no third-party dependencies
 
 ## Installation
 
@@ -33,7 +38,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-error-forge = "0.6.3"
+error-forge = "0.9.0"
 ```
 
 ## Usage
@@ -190,6 +195,85 @@ fn main() {
     
     // This panic will be formatted consistently with other errors
     panic!("Something went wrong!");
+}
+```
+
+### Structured Context Support
+
+```rust
+use error_forge::{define_errors, context::ContextError};
+use std::fs::File;
+
+define_errors! {
+    pub enum FileError {
+        #[error(display = "Failed to open file")]
+        OpenFailed,
+        
+        #[error(display = "Failed to read file")]
+        ReadFailed,
+    }
+}
+
+fn read_config_file(path: &str) -> Result<String, ContextError<FileError>> {
+    // Open the file, adding context to any error
+    let mut file = File::open(path)
+        .map_err(|_| FileError::OpenFailed)
+        .with_context(format!("Opening config file: {}", path))?;
+        
+    // Read the file, again with context
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|_| FileError::ReadFailed)
+        .context("Reading configuration data")?;
+        
+    Ok(contents)
+}
+
+fn main() {
+    match read_config_file("/etc/app/config.json") {
+        Ok(config) => println!("Config loaded: {} bytes", config.len()),
+        Err(e) => {
+            // Prints both the context and the underlying error
+            println!("Error: {}", e);
+            
+            // Access the original error
+            println!("Original error: {}", e.source());
+        }
+    }
+}
+```
+
+### Error Collection
+
+```rust
+use error_forge::{define_errors, collector::ErrorCollector};
+
+define_errors! {
+    pub enum ValidationError {
+        #[error(display = "Field '{}' is required", field)]
+        Required { field: String },
+        
+        #[error(display = "Field '{}' must be a valid email", field)]
+        InvalidEmail { field: String },
+    }
+}
+
+fn validate_form(data: &FormData) -> Result<(), ValidationError> {
+    let mut collector = ErrorCollector::new();
+    
+    // Collect validation errors without returning early
+    if data.name.is_empty() {
+        collector.push(ValidationError::required("name"));
+    }
+    
+    if data.email.is_empty() {
+        collector.push(ValidationError::required("email"));
+    } else if !is_valid_email(&data.email) {
+        collector.push(ValidationError::invalid_email("email"));
+    }
+    
+    // Return all errors at once
+    collector.into_result()
 }
 ```
 

@@ -22,6 +22,14 @@
   - [ConsoleTheme](#consoletheme)
   - [Error Hooks](#error-hooks)
   - [Panic Hook](#panic-hook)
+- [Structured Context](#structured-context)
+  - [ContextError](#contexterror)
+  - [Context Methods](#context-methods)
+- [Error Registry](#error-registry)
+  - [ErrorRegistry](#errorregistry)
+  - [Error Codes](#error-codes)
+- [Error Collection](#error-collection)
+  - [ErrorCollector](#errorcollector)
 - [Examples](#examples)
 
 <br><br>
@@ -31,7 +39,7 @@
 ### Install Manually
 ```toml
 [dependencies]
-error-forge = "0.6.3"
+error-forge = "0.9.0"
 ```
 
 ### Install Using Cargo
@@ -413,6 +421,209 @@ fn main() {
     
     // This panic will be formatted with the ConsoleTheme
     panic!("Something went terribly wrong!");
+}
+```
+
+<br>
+
+## Structured Context
+
+Error Forge provides structured context support for wrapping errors with additional information.
+
+### ContextError
+
+`ContextError` is a wrapper type that adds context information to any error type.
+
+**Signature:**
+```rust
+pub struct ContextError<E> {
+    context: String,
+    source: E,
+}
+```
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `new()` | `source: E, context: String` | `ContextError<E>` | Creates a new context error wrapping the source error |
+| `context()` | None | `&str` | Returns the context message |
+| `source()` | None | `&E` | Returns a reference to the source error |
+| `into_source()` | None | `E` | Consumes the context error and returns the source error |
+
+### Context Methods
+
+Error Forge extends `Result` with context methods for easy error wrapping.
+
+**Extension Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `context()` | `context: &str` | `Result<T, ContextError<E>>` | Wraps the error with context |
+| `with_context()` | `f: FnOnce() -> C` | `Result<T, ContextError<E>>` | Wraps the error with lazily evaluated context |
+
+**Example:**
+```rust
+use error_forge::{define_errors, context::ContextError};
+use std::fs::File;
+use std::io::Read;
+
+define_errors! {
+    pub enum FileError {
+        #[error(display = "Failed to open file")]
+        OpenFailed,
+        
+        #[error(display = "Failed to read file")]
+        ReadFailed,
+    }
+}
+
+fn read_config() -> Result<String, ContextError<FileError>> {
+    // Add context to the error
+    let mut file = File::open("config.json")
+        .map_err(|_| FileError::OpenFailed)
+        .context("Opening configuration file")?;
+        
+    // Add context with a closure for dynamic messages
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|_| FileError::ReadFailed)
+        .with_context(|| format!("Reading {} bytes from config", file.metadata().map_or(0, |m| m.len())))?;
+        
+    Ok(contents)
+}
+```
+
+<br>
+
+## Error Registry
+
+Error Forge provides a central registry for errors with support for error codes and documentation URLs.
+
+### ErrorRegistry
+
+`ErrorRegistry` is a global registry for tracking error types and their metadata.
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `register()` | `kind: &str, metadata: ErrorMetadata` | `()` | Registers an error with its metadata |
+| `get()` | `kind: &str` | `Option<&ErrorMetadata>` | Gets metadata for an error kind |
+| `register_url_format()` | `format: String` | `()` | Sets the URL format for documentation links |
+
+### Error Codes
+
+Error Forge supports numeric error codes for errors registered in the `ErrorRegistry`.
+
+**Example:**
+```rust
+use error_forge::{define_errors, registry::{ErrorRegistry, ErrorMetadata}};
+
+// Configure the error registry
+fn configure_registry() {
+    // Set URL format for documentation links
+    ErrorRegistry::register_url_format("https://example.com/errors/{code}".to_string());
+    
+    // Register errors with codes and categories
+    ErrorRegistry::register("Config", ErrorMetadata {
+        code: 1001,
+        category: "configuration",
+        description: "Configuration-related errors",
+    });
+    
+    ErrorRegistry::register("Database", ErrorMetadata {
+        code: 2001,
+        category: "database",
+        description: "Database access and query errors",
+    });
+}
+
+// Define errors that will use the registry
+define_errors! {
+    pub enum AppError {
+        #[error(display = "Configuration error: {message}")]
+        Config { message: String },
+        
+        #[error(display = "Database error: {message}")]
+        Database { message: String },
+    }
+}
+
+fn example() {
+    configure_registry();
+    
+    let error = AppError::config("Missing database URL");
+    
+    // Get the error code from the registry
+    if let Some(metadata) = ErrorRegistry::get(error.kind()) {
+        println!("Error code: {}", metadata.code);  // 1001
+        println!("Category: {}", metadata.category);  // "configuration"
+        println!("Documentation: {}", metadata.documentation_url());  // https://example.com/errors/1001
+    }
+}
+```
+
+<br>
+
+## Error Collection
+
+Error Forge provides a system for collecting multiple non-fatal errors instead of returning on the first error.
+
+### ErrorCollector
+
+`ErrorCollector` accumulates errors during processing for batch handling.
+
+**Methods:**
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `new()` | None | `ErrorCollector<E>` | Creates a new empty error collector |
+| `push()` | `error: E` | `()` | Adds an error to the collection |
+| `errors()` | None | `&[E]` | Returns a slice of all collected errors |
+| `is_empty()` | None | `bool` | Returns true if no errors have been collected |
+| `into_result()` | None | `Result<(), E>` | Returns Ok if no errors, or Err with the first error |
+| `into_error()` | None | `Option<E>` | Consumes the collector and returns the first error if any |
+
+**Example:**
+```rust
+use error_forge::{define_errors, collector::ErrorCollector};
+
+define_errors! {
+    pub enum ValidationError {
+        #[error(display = "Field '{}' is required", field)]
+        Required { field: String },
+        
+        #[error(display = "Value '{}' for field '{}' is invalid", value, field)]
+        InvalidValue { field: String, value: String },
+    }
+}
+
+struct Form {
+    username: String,
+    email: String,
+    age: Option<u32>,
+}
+
+fn validate_form(form: &Form) -> Result<(), ValidationError> {
+    let mut collector = ErrorCollector::new();
+    
+    // Validate username
+    if form.username.is_empty() {
+        collector.push(ValidationError::required("username"));
+    } else if form.username.len() < 3 {
+        collector.push(ValidationError::invalid_value("username", &form.username));
+    }
+    
+    // Validate email
+    if form.email.is_empty() {
+        collector.push(ValidationError::required("email"));
+    } else if !form.email.contains('@') {
+        collector.push(ValidationError::invalid_value("email", &form.email));
+    }
+    
+    // Return all collected errors at once
+    collector.into_result()
 }
 ```
 
