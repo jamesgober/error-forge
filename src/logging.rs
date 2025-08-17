@@ -63,26 +63,28 @@ pub mod log_impl {
     
     impl ErrorLogger for LogAdapter {
         fn log_error(&self, error: &dyn ForgeError, level: ErrorLevel) {
+            let kind = error.kind();
+            let message = error.dev_message();
             match level {
-                ErrorLevel::Critical => error!(target: "error-forge", "[CRITICAL] [{}] {}", error.kind(), error.dev_message()),
-                ErrorLevel::Error => error!(target: "error-forge", "[ERROR] [{}] {}", error.kind(), error.dev_message()),
-                ErrorLevel::Warning => warn!(target: "error-forge", "[WARNING] [{}] {}", error.kind(), error.dev_message()),
-                ErrorLevel::Info => info!(target: "error-forge", "[INFO] [{}] {}", error.kind(), error.dev_message()),
-                ErrorLevel::Debug => debug!(target: "error-forge", "[DEBUG] [{}] {}", error.kind(), error.dev_message()),
+                ErrorLevel::Critical => error!(target: "error-forge", "[CRITICAL] [{kind}] {message}"),
+                ErrorLevel::Error => error!(target: "error-forge", "[ERROR] [{kind}] {message}"),
+                ErrorLevel::Warning => warn!(target: "error-forge", "[WARNING] [{kind}] {message}"),
+                ErrorLevel::Info => info!(target: "error-forge", "[INFO] [{kind}] {message}"),
+                ErrorLevel::Debug => debug!(target: "error-forge", "[DEBUG] [{kind}] {message}"),
             }
         }
         
         fn log_message(&self, message: &str, level: ErrorLevel) {
             match level {
-                ErrorLevel::Critical | ErrorLevel::Error => error!(target: "error-forge", "{}", message),
-                ErrorLevel::Warning => warn!(target: "error-forge", "{}", message),
-                ErrorLevel::Info => info!(target: "error-forge", "{}", message),
-                ErrorLevel::Debug => debug!(target: "error-forge", "{}", message),
+                ErrorLevel::Critical | ErrorLevel::Error => error!(target: "error-forge", "{message}"),
+                ErrorLevel::Warning => warn!(target: "error-forge", "{message}"),
+                ErrorLevel::Info => info!(target: "error-forge", "{message}"),
+                ErrorLevel::Debug => debug!(target: "error-forge", "{message}"),
             }
         }
         
         fn log_panic(&self, info: &std::panic::PanicHookInfo) {
-            error!(target: "error-forge", "PANIC: {}", info);
+            error!(target: "error-forge", "PANIC: {info}");
         }
     }
     
@@ -113,10 +115,10 @@ pub mod tracing_impl {
         
         fn log_message(&self, message: &str, level: ErrorLevel) {
             match level {
-                ErrorLevel::Critical | ErrorLevel::Error => error!(target: "error-forge", "{}", message),
-                ErrorLevel::Warning => warn!(target: "error-forge", "{}", message),
-                ErrorLevel::Info => info!(target: "error-forge", "{}", message),
-                ErrorLevel::Debug => debug!(target: "error-forge", "{}", message),
+                ErrorLevel::Critical | ErrorLevel::Error => error!(target: "error-forge", "{message}"),
+                ErrorLevel::Warning => warn!(target: "error-forge", "{message}"),
+                ErrorLevel::Info => info!(target: "error-forge", "{message}"),
+                ErrorLevel::Debug => debug!(target: "error-forge", "{message}"),
             }
         }
         
@@ -135,21 +137,26 @@ pub mod tracing_impl {
 pub mod custom {
     use super::*;
     
-    /// Builder for creating a custom error logger
-    pub struct ErrorLoggerBuilder {
-        error_fn: Option<Box<dyn Fn(&dyn ForgeError, ErrorLevel) + Send + Sync + 'static>>,
-        message_fn: Option<Box<dyn Fn(&str, ErrorLevel) + Send + Sync + 'static>>,
-        panic_fn: Option<Box<dyn Fn(&std::panic::PanicHookInfo) + Send + Sync + 'static>>,
-    }
+    // Type aliases for complex types
+    /// Function type for error logging
+    type ErrorFn = Box<dyn Fn(&dyn ForgeError, ErrorLevel) + Send + Sync + 'static>;
+    /// Function type for message logging
+    type MessageFn = Box<dyn Fn(&str, ErrorLevel) + Send + Sync + 'static>;
+    /// Function type for panic logging
+    type PanicFn = Box<dyn Fn(&std::panic::PanicHookInfo) + Send + Sync + 'static>;
     
+    /// Builder for creating a custom error logger
+    #[derive(Default)]
+    pub struct ErrorLoggerBuilder {
+        error_fn: Option<ErrorFn>,
+        message_fn: Option<MessageFn>,
+        panic_fn: Option<PanicFn>,
+    }
+
     impl ErrorLoggerBuilder {
         /// Create a new error logger builder
         pub fn new() -> Self {
-            Self {
-                error_fn: None,
-                message_fn: None,
-                panic_fn: None,
-            }
+            Self::default()
         }
         
         /// Set the function to use for logging errors
@@ -191,9 +198,9 @@ pub mod custom {
     
     /// A custom error logger that uses user-provided functions
     pub struct CustomErrorLogger {
-        error_fn: Option<Box<dyn Fn(&dyn ForgeError, ErrorLevel) + Send + Sync + 'static>>,
-        message_fn: Option<Box<dyn Fn(&str, ErrorLevel) + Send + Sync + 'static>>,
-        panic_fn: Option<Box<dyn Fn(&std::panic::PanicHookInfo) + Send + Sync + 'static>>,
+        error_fn: Option<ErrorFn>,
+        message_fn: Option<MessageFn>,
+        panic_fn: Option<PanicFn>,
     }
     
     impl ErrorLogger for CustomErrorLogger {
@@ -233,17 +240,19 @@ mod tests {
         
         impl ErrorLogger for TestLogger {
             fn log_error(&self, error: &dyn ForgeError, level: ErrorLevel) {
-                let log = format!("{:?}: [{}] {}", level, error.kind(), error.dev_message());
+                let kind = error.kind();
+                let message = error.dev_message();
+                let log = format!("{level:?}: [{kind}] {message}");
                 self.logs.lock().unwrap().push(log);
             }
             
             fn log_message(&self, message: &str, level: ErrorLevel) {
-                let log = format!("{:?}: {}", level, message);
+                let log = format!("{level:?}: {message}");
                 self.logs.lock().unwrap().push(log);
             }
             
             fn log_panic(&self, info: &std::panic::PanicHookInfo) {
-                let log = format!("PANIC: {}", info);
+                let log = format!("PANIC: {info}");
                 self.logs.lock().unwrap().push(log);
             }
         }

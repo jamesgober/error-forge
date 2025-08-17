@@ -40,7 +40,7 @@ impl ErrorRegistry {
         };
         
         if codes.contains_key(&code) {
-            return Err(format!("Error code '{}' is already registered", code));
+            return Err(format!("Error code '{code}' is already registered"));
         }
         
         codes.insert(code.clone(), ErrorCodeInfo {
@@ -96,7 +96,7 @@ impl<E> CodedError<E> {
         if !ErrorRegistry::global().is_registered(&code) {
             let _ = register_error_code(
                 code.clone(), 
-                format!("Error code {}", code), 
+                format!("Error code {code}"), 
                 None as Option<String>,
                 false
             );

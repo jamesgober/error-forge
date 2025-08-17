@@ -103,22 +103,22 @@ pub enum AppError {
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Config { message, .. } => write!(f, "⚙️ Configuration Error: {}", message),
+            Self::Config { message, .. } => write!(f, "⚙️ Configuration Error: {message}"),
             Self::Filesystem { path, source, .. } => {
                 if let Some(p) = path {
-                    write!(f, "💾 Filesystem Error at {:?}: {}", p, source)
+                    write!(f, "💾 Filesystem Error at {p:?}: {source}")
                 } else {
-                    write!(f, "💾 Filesystem Error: {}", source)
+                    write!(f, "💾 Filesystem Error: {source}")
                 }
             },
             Self::Network { endpoint, source, .. } => {
                 if let Some(src) = source {
-                    write!(f, "🌐 Network Error on {}: {}", endpoint, src)
+                    write!(f, "🌐 Network Error on {endpoint}: {src}")
                 } else {
-                    write!(f, "🌐 Network Error on {}", endpoint)
+                    write!(f, "🌐 Network Error on {endpoint}")
                 }
             },
-            Self::Other { message, .. } => write!(f, "🚨 Error: {}", message),
+            Self::Other { message, .. } => write!(f, "🚨 Error: {message}"),
         }
     }
 }
@@ -211,7 +211,7 @@ impl AppError {
         // Convert the source parameter
         let source = match source.into() {
             Some(err) => err,
-            None => io::Error::new(io::ErrorKind::Other, "File operation failed"),
+            None => io::Error::other("File operation failed"),
         };
         
         let instance = Self::Filesystem { 
