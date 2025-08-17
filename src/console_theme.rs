@@ -1,7 +1,8 @@
 //! Console theming for error display in CLI applications
 //! 
 //! This module provides ANSI color formatting for error messages
-//! displayed in terminal environments.
+//! displayed in terminal environments. It automatically detects
+//! terminal capabilities and disables colors when appropriate.
 
 /// Color theme for console error output
 pub struct ConsoleTheme {
@@ -15,8 +16,94 @@ pub struct ConsoleTheme {
     dim: String,
 }
 
+/// Detect if the current terminal supports ANSI colors
+fn terminal_supports_ansi() -> bool {
+    #[cfg(windows)]
+    {
+        // On Windows, need special detection logic
+        // Windows 10 build 10586+ supports ANSI, but cmd.exe may have it disabled
+        static WINDOWS_ANSI_SUPPORT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        
+        *WINDOWS_ANSI_SUPPORT.get_or_init(|| {
+            // Check if stderr is a TTY
+            if !atty::is(atty::Stream::Stderr) {
+                return false;
+            }
+            
+            // Check for TERM environment variable
+            if let Ok(term) = std::env::var("TERM") {
+                if term == "dumb" {
+                    return false;
+                }
+            }
+            
+            // Check if NO_COLOR is set (https://no-color.org/)
+            if std::env::var_os("NO_COLOR").is_some() {
+                return false;
+            }
+            
+            // Check if we're in Windows Terminal, which supports ANSI
+            if std::env::var_os("WT_SESSION").is_some() {
+                return true;
+            }
+            
+            // Default to enabled for modern Windows
+            true
+        })
+    }
+    
+    #[cfg(not(windows))]
+    {
+        // Unix-like systems generally support ANSI if it's a TTY
+        if !atty::is(atty::Stream::Stderr) {
+            return false;
+        }
+        
+        // Check for TERM=dumb
+        if let Ok(term) = std::env::var("TERM") {
+            if term == "dumb" {
+                return false;
+            }
+        }
+        
+        // Check if NO_COLOR is set (https://no-color.org/)
+        if std::env::var_os("NO_COLOR").is_some() {
+            return false;
+        }
+        
+        true
+    }
+}
+
 impl Default for ConsoleTheme {
     fn default() -> Self {
+        if terminal_supports_ansi() {
+            Self {
+                error_color: "\x1b[31m".to_string(),   // Red
+                warning_color: "\x1b[33m".to_string(), // Yellow
+                info_color: "\x1b[34m".to_string(),    // Blue
+                success_color: "\x1b[32m".to_string(), // Green
+                caption_color: "\x1b[36m".to_string(), // Cyan
+                reset: "\x1b[0m".to_string(),
+                bold: "\x1b[1m".to_string(),
+                dim: "\x1b[2m".to_string(),
+            }
+        } else {
+            // No color support detected
+            Self::plain()
+        }
+    }
+}
+
+impl ConsoleTheme {
+    /// Create a new theme with default colors
+    /// Auto-detects terminal color support
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// Create a new theme with forced colors
+    pub fn with_colors() -> Self {
         Self {
             error_color: "\x1b[31m".to_string(),   // Red
             warning_color: "\x1b[33m".to_string(), // Yellow
@@ -27,13 +114,6 @@ impl Default for ConsoleTheme {
             bold: "\x1b[1m".to_string(),
             dim: "\x1b[2m".to_string(),
         }
-    }
-}
-
-impl ConsoleTheme {
-    /// Create a new theme with default colors
-    pub fn new() -> Self {
-        Self::default()
     }
     
     /// Create a new theme with no colors (plain text)
