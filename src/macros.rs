@@ -1,6 +1,8 @@
 /// Error hook types for centralized error handling
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ErrorLevel {
+    /// Debug-level errors (for detailed debugging)
+    Debug,
     /// Information-level errors (least severe)
     Info,
     /// Warning-level errors (moderate severity)
@@ -40,10 +42,11 @@ static ERROR_HOOK: OnceLock<fn(ErrorContext)> = OnceLock::new();
 /// // Setup logging with different levels
 /// register_error_hook(|ctx| {
 ///     match ctx.level {
-///         ErrorLevel::Critical => println!("CRITICAL: {} ({})", ctx.caption, ctx.kind),
-///         ErrorLevel::Error => println!("ERROR: {} ({})", ctx.caption, ctx.kind),
-///         ErrorLevel::Warning => println!("WARNING: {} ({})", ctx.caption, ctx.kind),
+///         ErrorLevel::Debug => println!("DEBUG: {} ({})", ctx.caption, ctx.kind),
 ///         ErrorLevel::Info => println!("INFO: {} ({})", ctx.caption, ctx.kind),
+///         ErrorLevel::Warning => println!("WARNING: {} ({})", ctx.caption, ctx.kind),
+///         ErrorLevel::Error => println!("ERROR: {} ({})", ctx.caption, ctx.kind),
+///         ErrorLevel::Critical => println!("CRITICAL: {} ({})", ctx.caption, ctx.kind),
 ///     }
 ///     
 ///     // Optional: send notifications for critical errors
@@ -68,6 +71,8 @@ pub fn call_error_hook(caption: &str, kind: &str, is_fatal: bool, is_retryable: 
             ErrorLevel::Error
         } else if kind == "Warning" {
             ErrorLevel::Warning
+        } else if kind == "Debug" {
+            ErrorLevel::Debug
         } else {
             ErrorLevel::Info
         };
