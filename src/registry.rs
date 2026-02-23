@@ -116,7 +116,7 @@ impl<E> CodedError<E> {
     
     /// Set whether this error is retryable
     pub fn with_retryable(self, _retryable: bool) -> Self {
-        // Simply return self for tests - implementation simplified
+        // TODO: store retryable flag once the field is added
         self
     }
     

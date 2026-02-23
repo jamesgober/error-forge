@@ -204,7 +204,7 @@ fn implement_for_enum(input: &DeriveInput, error_prefix: &str) -> proc_macro2::T
                         Self::#variant_name(#(#field_pattern_list)*) => format!("{}: {}", #error_prefix, format!(#display_format #(, #field_names)*))
                     });
                 } else {
-                    // Fall back to simple display if no formatting placeholders
+                    // Fallback: no field interpolation needed
                     display_match_arms.push(quote! {
                         Self::#variant_name(..) => format!("{}: {}", #error_prefix, #display_format)
                     });
