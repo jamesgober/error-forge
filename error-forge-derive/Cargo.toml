@@ -4,8 +4,11 @@ version = "0.9.7"
 edition = "2021"
 description = "Derive macros for the error-forge crate"
 license = "Apache-2.0"
+documentation = "https://docs.rs/error-forge"
+repository = "https://github.com/jamesgober/error-forge"
+homepage = "https://github.com/jamesgober/error-forge"
 authors = [
-    "James Gober <codeca@jamesgober.dev>"
+    "James Gober <me@jamesgober.com>"
 ]
 
 [lib]
