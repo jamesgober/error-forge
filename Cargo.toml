@@ -6,7 +6,7 @@ readme = "README.md"
 license = "Apache-2.0"
 
 authors = [
-    "James Gober <codeca@jamesgober.dev>"
+    "James Gober <me@jamesgober.com>"
 ]
 
 description = "A comprehensive Rust error management framework with async support, error recovery patterns, and resilience features for building robust, fault-tolerant applications with rich error handling, formatting, and tracing capabilities."
