@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.9.7] - 2026-03-24
+
+### Added
 - Added `try_register_error_hook(...)` so applications can detect duplicate hook registration explicitly.
 - Added regression coverage for `define_errors!`, `#[derive(ModError)]`, coded-error overrides, and feature-gated behavior.
 
@@ -22,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the derive macro so list-style attributes such as `#[error_display("...")]` and `#[error_http_status(...)]` are honored.
 - Fixed strict lint failures so `cargo clippy --all-targets --all-features -- -D warnings` now passes cleanly.
 - Removed stale documentation that described unsupported APIs or outdated examples.
+
 
 ## [0.9.6] - 2025-08-17
 
@@ -85,7 +94,8 @@ Initial public release with core functionality.
 - Error hook system with severity levels
 - Zero external dependencies design
 
-[Unreleased]: https://github.com/jamesgober/error-forge/compare/0.9.6...HEAD
+[Unreleased]: https://github.com/jamesgober/error-forge/compare/0.9.7...HEAD
+[0.9.7]: https://github.com/jamesgober/error-forge/compare/0.9.6...v0.9.7
 [0.9.6]: https://github.com/jamesgober/error-forge/compare/0.9.0...v0.9.6
 [0.9.0]: https://github.com/jamesgober/error-forge/compare/0.6.3...v0.9.0
 [0.6.3]: https://github.com/jamesgober/error-forge/compare/0.6.1...0.6.3

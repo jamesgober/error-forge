@@ -17,7 +17,7 @@ It ships with a built-in `AppError`, a declarative `define_errors!` macro, an op
 
 ```toml
 [dependencies]
-error-forge = "0.9.6"
+error-forge = "0.9.7"
 ```
 
 Common optional features:
@@ -84,6 +84,7 @@ Notes:
 - `#[kind(...)]` is required for each variant.
 - Constructors are generated from the lowercase variant name, such as `ServiceError::config(...)`.
 - A field named `source` participates in `std::error::Error::source()` chaining.
+- For custom `source` field types, implement `error_forge::macros::ErrorSource` in your crate.
 - With the `serde` feature enabled, source fields must themselves be serializable if you want to derive serialization through the macro-generated enum.
 
 ### Adding Context Without Losing the Original Error
@@ -262,34 +263,3 @@ The crate is validated with:
 ## License
 
 Licensed under Apache-2.0.
-                let valid_themes = vec!["light", "dark", "system"];
-                if !valid_themes.contains(&value.as_str()) {
-                    collector.push(ValidationError::invalid_value(
-                        "preferences.theme", 
-                        format!("'{}' is not a valid theme", value)
-                    ));
-                }
-            },
-            "notifications" => {
-                let valid_values = vec!["all", "important", "none"];
-                if !valid_values.contains(&value.as_str()) {
-                    collector.push(ValidationError::invalid_value(
-                        "preferences.notifications", 
-                        format!("'{}' is not a valid notification setting", value)
-                    ));
-                }
-            },
-            _ => {
-                collector.push(ValidationError::invalid_reference(
-                    format!("preference '{}'", key)
-                ));
-            }
-        }
-    }
-    
-    // Return all validation errors at once
-    collector.into_result()
-}
-```
-
-For more detailed documentation and additional advanced usage examples, refer to the [API Documentation](docs/API.md).

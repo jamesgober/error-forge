@@ -1,6 +1,6 @@
 [package]
 name = "error-forge"
-version = "0.9.6"
+version = "0.9.7"
 edition = "2021"
 readme = "README.md"
 license = "Apache-2.0"
@@ -43,7 +43,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 thiserror = "1.0"
 paste = "1.0"
-error-forge-derive = {version = "0.2.1", path = "./error-forge-derive", optional = true }
+error-forge-derive = {version = "0.9.7", path = "./error-forge-derive", optional = true }
 serde = { version = "1.0", optional = true, features = ["derive"] }
 atty = "0.2"
 once_cell = { version = "1.8", optional = true }
