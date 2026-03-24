@@ -15,11 +15,11 @@ pub enum SimpleDbError {
     // Simple unit variant
     #[error_display("Connection failed")]
     ConnectionFailed,
-    
+
     // Simple tuple variant with one field
     #[error_display("Query failed: {0}")]
     QueryFailed(String),
-    
+
     // Unit variant with additional metadata attributes
     #[error_display("Transaction failed")]
     #[error_retryable]
@@ -33,7 +33,6 @@ pub enum SimpleDbError {
 #[error_prefix("Config")]
 pub struct SimpleConfigError;
 
-
 fn main() {
     // Only compile this section when the "derive" feature is enabled
     #[cfg(feature = "derive")]
@@ -46,7 +45,7 @@ fn main() {
 
         // Demonstrate basic ForgeError trait functionality
         println!("=== Derived Error Examples ===");
-        
+
         println!("\n--- SimpleDbError::ConnectionFailed ---");
         println!("Display: {}", conn_err);
         println!("Raw display format: '{:?}'", format!("{}", conn_err));
@@ -55,21 +54,21 @@ fn main() {
         println!("Raw caption: '{:?}'", conn_err.caption());
         println!("Is retryable: {}", conn_err.is_retryable());
         println!("Status code: {}", conn_err.status_code());
-        
+
         println!("\n--- SimpleDbError::QueryFailed ---");
         println!("Display: {}", query_err);
         println!("Kind: {}", query_err.kind());
         println!("Caption: {}", query_err.caption());
         println!("Is retryable: {}", query_err.is_retryable());
         println!("Status code: {}", query_err.status_code());
-        
+
         println!("\n--- SimpleDbError::TransactionFailed ---");
         println!("Display: {}", tx_err);
         println!("Kind: {}", tx_err.kind());
         println!("Caption: {}", tx_err.caption());
         println!("Is retryable: {}", tx_err.is_retryable());
         println!("Status code: {}", tx_err.status_code());
-        
+
         println!("\n--- SimpleConfigError ---");
         println!("Display: {}", config_err);
         println!("Kind: {}", config_err.kind());
@@ -77,7 +76,7 @@ fn main() {
         println!("Is retryable: {}", config_err.is_retryable());
         println!("Status code: {}", config_err.status_code());
     }
-    
+
     // When the "derive" feature is not enabled, show this message instead
     #[cfg(not(feature = "derive"))]
     {

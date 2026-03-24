@@ -1,523 +1,267 @@
 <div align="center">
-   <img width="120px" height="auto" src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/icons/hexagon-3.svg" alt="Triple Hexagon">
-    <h1>
-        <strong>Error Forge</strong>
-        <sup><br><sub>RUST ERROR FRAMEWORK</sub><br></sup>
-    </h1>
-        <a href="https://crates.io/crates/error-forge" alt="Error-Protocol on Crates.io"><img alt="Crates.io" src="https://img.shields.io/crates/v/error-forge"></a>
-        <span>&nbsp;</span>
-        <a href="https://crates.io/crates/error-forge" alt="Download Error-Forge"><img alt="Crates.io Downloads" src="https://img.shields.io/crates/d/error-forge?color=%230099ff"></a>
-        <span>&nbsp;</span>
-        <a href="https://docs.rs/error-forge" title="Error-Forge Documentation"><img alt="docs.rs" src="https://img.shields.io/docsrs/error-forge"></a>
-        <span>&nbsp;</span>
-        <a href="https://github.com/jamesgober/error-forge/actions"><img alt="GitHub CI" src="https://github.com/jamesgober/error-forge/actions/workflows/ci.yml/badge.svg"></a>
+  <img width="120" height="auto" src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/icons/hexagon-3.svg" alt="Error Forge logo">
+  <h1><strong>Error Forge</strong></h1>
+  <p>Pragmatic error modeling, contextual diagnostics, and resilience helpers for Rust.</p>
 </div>
-<br>
 
-**Error Forge** is a comprehensive error management framework for Rust applications that combines robust error handling with resilience patterns. It provides both synchronous and asynchronous error management capabilities, recovery patterns like circuit breakers and retry policies with backoff strategies, and error collection mechanisms. Error Forge simplifies error handling through expressive macros, automatic trait implementations, extensible error hooks, and resilience patterns designed for enterprise-grade applications.
+Error Forge is a Rust error-handling crate built around a few simple ideas:
 
-## Features
+- Errors should carry stable metadata such as kind, retryability, status code, and exit code.
+- Application code should be able to add context without destroying the original cause chain.
+- Operational tooling should have clear hooks for logging, formatting, codes, and recovery policies.
+- Feature-gated integrations should stay optional so the core remains lightweight.
 
-- **Rich Error Types**: Define expressive error types with minimal boilerplate
-- **ForgeError Trait**: Unified interface for all error types with contextual metadata
-- **Async Error Support**: First-class support for async applications with `AsyncForgeError` trait
-- **Error Recovery Patterns**:
-  - **Circuit Breaker**: Prevent cascading failures with intelligent state management
-  - **Retry Policies**: Configurable retry mechanisms with predicate support
-  - **Backoff Strategies**: Exponential, linear, and fixed backoff with optional jitter
-- **Declarative Macros**: Generate complete error enums with the `define_errors!` macro
-- **Error Composition**: Combine errors from multiple modules with the `group!` macro
-- **Derive Macros**: Quickly implement errors with `#[derive(ModError)]`
-- **Console Formatting**: ANSI color formatting for terminal output with `ConsoleTheme`
-- **Error Hooks**: Thread-safe error hook system using `OnceLock`
-- **Structured Context**: Error wrapping with context via `context()` and `with_context()` methods
-- **Error Registry**: Support for error codes and documentation URLs
-- **Non-fatal Error Collection**: Collect and process multiple errors with `ErrorCollector`
-- **Logging Integration**: Optional integration with `log` and `tracing` crates
-- **Cross-Platform**: Full support for Linux, macOS, and Windows
-- **Zero Core Dependencies**: Core functionality has no third-party dependencies
+It ships with a built-in `AppError`, a declarative `define_errors!` macro, an optional `#[derive(ModError)]` proc macro, error collectors, registry support, console formatting, synchronous retry and circuit-breaker primitives, and async-specific traits behind feature flags.
 
 ## Installation
-
-Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
 error-forge = "0.9.6"
 ```
 
-## Usage
+Common optional features:
 
-### Basic Error Definition
+- `derive`: enables `#[derive(ModError)]`
+- `async`: enables `AsyncForgeError`
+- `serde`: enables serialization support where compatible
+- `log`: enables the `log` adapter
+- `tracing`: enables the `tracing` adapter
+
+## Quick Start
+
+### Built-in `AppError`
 
 ```rust
-use error_forge::define_errors;
+use error_forge::{AppError, ForgeError};
 
-define_errors! {
-    pub enum DatabaseError {
-        #[error(display = "Database connection failed: {}", message)]
-        ConnectionFailed { message: String },
-        
-        #[error(display = "Query execution failed: {}", message)]
-        QueryFailed { message: String, query: String },
-        
-        #[error(display = "Record not found with ID: {}", id)]
-        RecordNotFound { id: String },
-    }
+fn load_config() -> Result<(), AppError> {
+    Err(AppError::config("Missing DATABASE_URL").with_fatal(true))
 }
 
-// The macro automatically implements constructors and the ForgeError trait
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create an error using the generated constructor
-    let error = DatabaseError::connection_failed("Timeout after 30 seconds");
-    
-    // Use ForgeError methods
-    println!("Error kind: {}", error.kind());
-    println!("Caption: {}", error.caption());
-    println!("Status code: {}", error.status_code());
-    
-    Err(Box::new(error))
+fn main() {
+    let error = load_config().unwrap_err();
+
+    assert_eq!(error.kind(), "Config");
+    assert!(error.is_fatal());
+    println!("{}", error);
 }
 ```
 
-### Error Composition with the `group!` Macro
+### Defining Custom Errors With `define_errors!`
+
+`define_errors!` is the lowest-friction way to create a custom error enum with generated constructors and `ForgeError` metadata.
 
 ```rust
-use error_forge::{define_errors, group};
+use error_forge::{define_errors, ForgeError};
+use std::io;
 
 define_errors! {
-    pub enum ApiError {
-        #[error(display = "Invalid API key")]
-        InvalidApiKey,
-        
-        #[error(display = "Rate limit exceeded")]
-        RateLimitExceeded,
+    pub enum ServiceError {
+        #[error(display = "Configuration is invalid: {message}", message)]
+        #[kind(Config, status = 500)]
+        Config { message: String },
+
+        #[error(display = "Request to {endpoint} failed", endpoint)]
+        #[kind(Network, retryable = true, status = 503)]
+        Network { endpoint: String, source: Option<Box<dyn std::error::Error + Send + Sync>> },
+
+        #[error(display = "Could not read {path}", path)]
+        #[kind(Filesystem, status = 500)]
+        Filesystem { path: String, source: io::Error },
     }
 }
 
-define_errors! {
-    pub enum ValidationError {
-        #[error(display = "Required field {} is missing", field)]
-        MissingField { field: String },
-        
-        #[error(display = "Field {} has invalid format", field)]
-        InvalidFormat { field: String },
-    }
-}
-
-// Combine errors from different modules into a single error type
-group! {
-    pub enum AppError {
-        Api(ApiError),
-        Validation(ValidationError),
-        // Add more error types as needed
-    }
-}
-
-fn validate_request() -> Result<(), AppError> {
-    // Create a ValidationError
-    let error = ValidationError::missing_field("username");
-    
-    // The error will be automatically converted to AppError
-    Err(error.into())
+fn main() {
+    let error = ServiceError::config("Missing API token".to_string());
+    assert_eq!(error.kind(), "Config");
+    assert_eq!(error.status_code(), 500);
 }
 ```
 
-### Using Derive Macro
+Notes:
+
+- `#[kind(...)]` is required for each variant.
+- Constructors are generated from the lowercase variant name, such as `ServiceError::config(...)`.
+- A field named `source` participates in `std::error::Error::source()` chaining.
+- With the `serde` feature enabled, source fields must themselves be serializable if you want to derive serialization through the macro-generated enum.
+
+### Adding Context Without Losing the Original Error
 
 ```rust
-use error_forge::ModError;
+use error_forge::{AppError, ResultExt};
+
+fn connect() -> Result<(), AppError> {
+    Err(AppError::network("db.internal", None))
+}
+
+fn main() {
+    let error = connect()
+        .with_context(|| "opening primary database connection".to_string())
+        .unwrap_err();
+
+    println!("{}", error);
+}
+```
+
+### Collecting Multiple Errors
+
+```rust
+use error_forge::{AppError, ErrorCollector};
+
+fn main() {
+    let mut collector = ErrorCollector::new();
+    collector.push(AppError::config("missing host"));
+    collector.push(AppError::other("invalid timeout"));
+
+    assert_eq!(collector.len(), 2);
+    println!("{}", collector.summary());
+}
+```
+
+## Derive Macro
+
+Enable the `derive` feature to use `#[derive(ModError)]`.
+
+```rust
+use error_forge::{ForgeError, ModError};
 
 #[derive(Debug, ModError)]
-#[module_error(kind = "AuthError")]
-pub enum AuthError {
-    #[error(display = "Invalid credentials")]
-    InvalidCredentials,
-    
-    #[error(display = "Account locked: {}", reason)]
-    AccountLocked { reason: String },
-    
-    #[error(display = "Session expired")]
-    #[http_status(401)]
-    SessionExpired,
+#[error_prefix("Database")]
+enum DbError {
+    #[error_display("Connection failed: {0}")]
+    #[error_retryable]
+    #[error_http_status(503)]
+    ConnectionFailed(String),
+
+    #[error_display("Query failed for {query}")]
+    QueryFailed { query: String },
+
+    #[error_display("Permission denied")]
+    #[error_fatal]
+    PermissionDenied,
 }
 
-fn login() -> Result<(), AuthError> {
-    Err(AuthError::InvalidCredentials)
+fn main() {
+    let error = DbError::ConnectionFailed("primary".to_string());
+    assert!(error.is_retryable());
+    assert_eq!(error.status_code(), 503);
 }
 ```
 
-### Error Hooks for Logging Integration
+Supported derive attributes:
+
+- `error_prefix`
+- `error_display`
+- `error_kind`
+- `error_caption`
+- `error_retryable`
+- `error_http_status`
+- `error_exit_code`
+- `error_fatal`
+
+Both list-style and name-value forms are supported for `error_prefix`.
+
+## Recovery and Resilience
+
+The recovery module is intentionally synchronous today. It is designed for blocking code, worker threads, and service wrappers where a small sleep is acceptable.
 
 ```rust
-use error_forge::{AppError, macros::{register_error_hook, ErrorLevel, ErrorContext}};
+use error_forge::recovery::{CircuitBreaker, RetryPolicy};
 
 fn main() {
-    // Register a hook for centralized error handling
-    register_error_hook(|ctx| {
-        match ctx.level {
-            ErrorLevel::Info => println!("INFO: {} [{}]", ctx.caption, ctx.kind),
-            ErrorLevel::Warning => println!("WARN: {} [{}]", ctx.caption, ctx.kind),
-            ErrorLevel::Error => println!("ERROR: {} [{}]", ctx.caption, ctx.kind),
-            ErrorLevel::Critical => {
-                println!("CRITICAL: {} [{}]", ctx.caption, ctx.kind);
-                
-                // Send notifications for critical errors
-                if ctx.is_fatal {
-                    send_notification("Critical error occurred", ctx.caption);
-                }
-            }
+    let breaker = CircuitBreaker::new("inventory-service");
+    let policy = RetryPolicy::new_fixed(25).with_max_retries(3);
+
+    let value: Result<u32, std::io::Error> = breaker.execute(|| {
+        policy.retry(|| Ok(42))
+    });
+
+    assert_eq!(value.unwrap(), 42);
+}
+```
+
+If you need async retries, keep Error Forge for modeling and classification, then wrap retry behavior with your async runtime of choice.
+
+## Hooks, Logging, and Formatting
+
+### Error Hooks
+
+```rust
+use error_forge::{
+    AppError,
+    macros::{try_register_error_hook, ErrorLevel},
+};
+
+fn main() {
+    let _ = try_register_error_hook(|ctx| {
+        if matches!(ctx.level, ErrorLevel::Critical | ErrorLevel::Error) {
+            eprintln!("{} [{}]", ctx.caption, ctx.kind);
         }
     });
-    
-    // This will trigger the hook
-    let _error = AppError::config("Configuration file not found");
-}
 
-fn send_notification(level: &str, message: &str) {
-    // Send notifications via your preferred channel
-    println!("Notification sent: {} - {}", level, message);
+    let _ = AppError::config("Missing environment variable");
 }
 ```
 
-### Console Formatting
+### Logging Adapters
+
+- `logging::register_logger(...)` installs a custom logger once.
+- `logging::log_impl::init()` is available with the `log` feature.
+- `logging::tracing_impl::init()` is available with the `tracing` feature.
+
+### Console Output
 
 ```rust
-use error_forge::{AppError, ConsoleTheme};
+use error_forge::{console_theme::print_error, AppError};
 
 fn main() {
-    // Create an error
-    let error = AppError::config("Database configuration missing");
-    
-    // Set up console theme
-    let theme = ConsoleTheme::new();
-    
-    // Print formatted error
-    println!("{}", theme.format_error(&error));
-    
-    // Install panic hook for consistent formatting
-    theme.install_panic_hook();
-    
-    // This panic will be formatted consistently with other errors
-    panic!("Something went wrong!");
+    let error = AppError::filesystem("config.toml", None);
+    print_error(&error);
 }
 ```
 
-### Structured Context Support
+## Error Codes
+
+Attach stable codes to errors when you want machine-readable identifiers or documentation links.
 
 ```rust
-use error_forge::{define_errors, context::ContextError};
-use std::fs::File;
-
-define_errors! {
-    pub enum FileError {
-        #[error(display = "Failed to open file")]
-        OpenFailed,
-        
-        #[error(display = "Failed to read file")]
-        ReadFailed,
-    }
-}
-
-fn read_config_file(path: &str) -> Result<String, ContextError<FileError>> {
-    // Open the file, adding context to any error
-    let mut file = File::open(path)
-        .map_err(|_| FileError::OpenFailed)
-        .with_context(format!("Opening config file: {}", path))?;
-        
-    // Read the file, again with context
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .map_err(|_| FileError::ReadFailed)
-        .context("Reading configuration data")?;
-        
-    Ok(contents)
-}
+use error_forge::{register_error_code, AppError, ForgeError};
 
 fn main() {
-    match read_config_file("/etc/app/config.json") {
-        Ok(config) => println!("Config loaded: {} bytes", config.len()),
-        Err(e) => {
-            // Prints both the context and the underlying error
-            println!("Error: {}", e);
-            
-            // Access the original error
-            println!("Original error: {}", e.source());
-        }
-    }
+    let _ = register_error_code(
+        "AUTH-001",
+        "Authentication failed",
+        Some("https://example.com/errors/AUTH-001"),
+        false,
+    );
+
+    let error = AppError::config("Invalid credentials")
+        .with_code("AUTH-001")
+        .with_status(401);
+
+    assert_eq!(error.status_code(), 401);
+    println!("{}", error.dev_message());
 }
 ```
 
-### Error Collection
+## Quality Bar
 
-```rust
-use error_forge::{define_errors, collector::ErrorCollector};
+The crate is validated with:
 
-define_errors! {
-    pub enum ValidationError {
-        #[error(display = "Field '{}' is required", field)]
-        Required { field: String },
-        
-        #[error(display = "Field '{}' must be a valid email", field)]
-        InvalidEmail { field: String },
-    }
-}
+- `cargo test --all-features`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- targeted examples and feature-gated regression coverage
 
-fn validate_form(data: &FormData) -> Result<(), ValidationError> {
-    let mut collector = ErrorCollector::new();
-    
-    // Collect validation errors without returning early
-    if data.name.is_empty() {
-        collector.push(ValidationError::required("name"));
-    }
-    
-    if data.email.is_empty() {
-        collector.push(ValidationError::required("email"));
-    } else if !is_valid_email(&data.email) {
-        collector.push(ValidationError::invalid_email("email"));
-    }
-    
-    // Return all errors at once
-    collector.into_result()
-}
-```
+## Documentation
 
-## Advanced Usage
+- API reference: `docs/API.md`
+- Examples: `examples/`
+- Crate documentation: https://docs.rs/error-forge
 
-### Microservice Error Management with Resilience
+## License
 
-This example demonstrates a complete error management system for a microservice architecture with resilience patterns.
-
-```rust
-use error_forge::{define_errors, group, recovery::{CircuitBreaker, CircuitBreakerConfig, RetryPolicy, ForgeErrorRecovery}};
-use std::time::Duration;
-
-// Define domain-specific error types for different services
-define_errors! {
-    pub enum DatabaseError {
-        #[error(display = "Failed to connect to database: {}", message)]
-        #[kind(Connection, retryable = true, status = 503)]
-        ConnectionFailed { message: String },
-        
-        #[error(display = "Query execution failed: {}", message)]
-        #[kind(Query, retryable = true, status = 500)]
-        QueryFailed { message: String },
-        
-        #[error(display = "Transaction failed: {}", message)]
-        #[kind(Transaction, retryable = true, status = 500)]
-        TransactionFailed { message: String },
-    }
-}
-
-define_errors! {
-    pub enum ApiError {
-        #[error(display = "External API request to {} failed: {}", endpoint, message)]
-        #[kind(Request, retryable = true, status = 502)]
-        RequestFailed { endpoint: String, message: String },
-        
-        #[error(display = "Rate limit exceeded for endpoint: {}", endpoint)]
-        #[kind(RateLimit, retryable = true, status = 429)]
-        RateLimited { endpoint: String },
-        
-        #[error(display = "Authentication failed: {}", message)]
-        #[kind(Auth, retryable = false, status = 401)]
-        AuthFailed { message: String },
-    }
-}
-
-define_errors! {
-    pub enum CacheError {
-        #[error(display = "Failed to connect to cache server: {}", message)]
-        #[kind(Connection, retryable = true, status = 503)]
-        ConnectionFailed { message: String },
-        
-        #[error(display = "Cache operation failed: {}", message)]
-        #[kind(Operation, retryable = true, status = 500)]
-        OperationFailed { message: String },
-    }
-}
-
-// Group all service errors into a single application error type
-group! {
-    pub enum ServiceError {
-        Database(DatabaseError),
-        Api(ApiError),
-        Cache(CacheError),
-    }
-}
-
-// Implement extended recovery capabilities
-impl ForgeErrorRecovery for ServiceError {}
-
-async fn get_user_data(user_id: &str) -> Result<UserData, ServiceError> {
-    // Create a circuit breaker for database operations
-    let db_circuit_breaker = CircuitBreaker::new(CircuitBreakerConfig::default()
-        .with_failure_threshold(3)
-        .with_reset_timeout(Duration::from_secs(30)));
-    
-    // Create a retry policy for database operations
-    let db_retry_policy = RetryPolicy::new_exponential()
-        .with_max_retries(3)
-        .with_initial_delay(100)
-        .with_max_delay(2000)
-        .with_jitter(0.1);
-    
-    // Execute database query with resilience patterns
-    let user = db_circuit_breaker.execute(|| async {
-        db_retry_policy.forge_executor().retry(|| async {
-            match database::query_user(user_id).await {
-                Ok(user) => Ok(user),
-                Err(e) => Err(DatabaseError::query_failed(e.to_string()).into())
-            }
-        }).await
-    }).await?;
-    
-    // Create a circuit breaker for API operations
-    let api_circuit_breaker = CircuitBreaker::new(CircuitBreakerConfig::default()
-        .with_failure_threshold(5)
-        .with_reset_timeout(Duration::from_secs(60)));
-        
-    // Fetch additional user data from external API with resilience patterns
-    let user_preferences = api_circuit_breaker.execute(|| async {
-        // Create a retry policy for API calls with appropriate backoff
-        let api_retry = RetryPolicy::new_exponential()
-            .with_max_retries(3)
-            .with_initial_delay(200)
-            .with_max_delay(5000);
-            
-        api_retry.forge_executor().retry(|| async {
-            match external_api::fetch_user_preferences(user_id).await {
-                Ok(prefs) => Ok(prefs),
-                Err(e) => {
-                    if e.contains("rate limit") {
-                        Err(ApiError::rate_limited("preferences-api.example.com").into())
-                    } else {
-                        Err(ApiError::request_failed(
-                            "preferences-api.example.com",
-                            e.to_string()
-                        ).into())
-                    }
-                }
-            }
-        }).await
-    }).await?;
-    
-    // Combine data and return
-    Ok(UserData {
-        profile: user,
-        preferences: user_preferences,
-    })
-}
-
-// Mock types and functions for the example
-struct UserData {
-    profile: User,
-    preferences: UserPreferences,
-}
-
-struct User { /* user fields */ }
-struct UserPreferences { /* preferences fields */ }
-
-mod database {
-    use super::*;
-    pub async fn query_user(_id: &str) -> Result<User, String> {
-        // Mock implementation
-        Ok(User {})
-    }
-}
-
-mod external_api {
-    use super::*;
-    pub async fn fetch_user_preferences(_id: &str) -> Result<UserPreferences, String> {
-        // Mock implementation
-        Ok(UserPreferences {})
-    }
-}
-```
-
-### Comprehensive Error Collection for Validation
-
-This example shows how to use the error collector for complex data validation scenarios:
-
-```rust
-use error_forge::{define_errors, collector::ErrorCollector};
-use std::collections::HashMap;
-
-define_errors! {
-    pub enum ValidationError {
-        #[error(display = "Field '{}' is required", field)]
-        #[kind(Required, status = 400)]
-        Required { field: String },
-        
-        #[error(display = "Field '{}' has invalid format: {}", field, message)]
-        #[kind(Format, status = 400)]
-        InvalidFormat { field: String, message: String },
-        
-        #[error(display = "Field '{}' has invalid value: {}", field, message)]
-        #[kind(Value, status = 400)]
-        InvalidValue { field: String, message: String },
-        
-        #[error(display = "Reference to '{}' not found", reference)]
-        #[kind(Reference, status = 400)]
-        InvalidReference { reference: String },
-    }
-}
-
-struct UserProfile {
-    username: String,
-    email: Option<String>,
-    age: Option<u8>,
-    country: Option<String>,
-    preferences: HashMap<String, String>,
-}
-
-fn validate_user_profile(profile: &UserProfile) -> Result<(), ValidationError> {
-    let mut collector = ErrorCollector::new();
-    
-    // Required field checks
-    if profile.username.is_empty() {
-        collector.push(ValidationError::required("username"));
-    } else if profile.username.len() < 3 || profile.username.len() > 30 {
-        collector.push(ValidationError::invalid_format(
-            "username", 
-            "Username must be between 3 and 30 characters long"
-        ));
-    }
-    
-    // Format validations
-    if let Some(email) = &profile.email {
-        if !email.contains('@') || !email.contains('.') {
-            collector.push(ValidationError::invalid_format(
-                "email", 
-                "Email must contain '@' and domain"
-            ));
-        }
-    }
-    
-    // Value range validations
-    if let Some(age) = profile.age {
-        if age < 13 {
-            collector.push(ValidationError::invalid_value(
-                "age", 
-                "User must be at least 13 years old"
-            ));
-        }
-    }
-    
-    // Reference validations
-    if let Some(country) = &profile.country {
-        let valid_countries = vec!["US", "CA", "UK", "AU", "DE", "FR"];
-        if !valid_countries.contains(&country.as_str()) {
-            collector.push(ValidationError::invalid_reference(
-                format!("country '{}'", country)
-            ));
-        }
-    }
-    
-    // Complex preference validations
-    for (key, value) in &profile.preferences {
-        match key.as_str() {
-            "theme" => {
+Licensed under Apache-2.0.
                 let valid_themes = vec!["light", "dark", "system"];
                 if !valid_themes.contains(&value.as_str()) {
                     collector.push(ValidationError::invalid_value(

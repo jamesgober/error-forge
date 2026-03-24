@@ -1,15 +1,15 @@
-use std::time::Duration;
-use std::cmp::min;
 use rand::Rng;
+use std::cmp::min;
+use std::time::Duration;
 
 /// Trait for backoff strategies used in retry mechanisms
 pub trait Backoff: Send + Sync + 'static {
     /// Get the next delay duration based on the current attempt
     fn next_delay(&self, attempt: usize) -> Duration;
-    
+
     /// Reset the backoff state
     fn reset(&mut self) {}
-    
+
     /// Create a clone of this backoff strategy
     fn box_clone(&self) -> Box<dyn Backoff>;
 }
@@ -42,25 +42,25 @@ impl ExponentialBackoff {
             jitter: false,
         }
     }
-    
+
     /// Set the initial delay in milliseconds
     pub fn with_initial_delay(mut self, delay_ms: u64) -> Self {
         self.initial_delay_ms = delay_ms;
         self
     }
-    
+
     /// Set the maximum delay in milliseconds
     pub fn with_max_delay(mut self, delay_ms: u64) -> Self {
         self.max_delay_ms = delay_ms;
         self
     }
-    
+
     /// Set the multiplication factor for each attempt
     pub fn with_factor(mut self, factor: f64) -> Self {
         self.factor = factor;
         self
     }
-    
+
     /// Enable or disable jitter
     pub fn with_jitter(mut self, jitter: bool) -> Self {
         self.jitter = jitter;
@@ -73,12 +73,12 @@ impl Backoff for ExponentialBackoff {
         if attempt == 0 {
             return Duration::from_millis(self.initial_delay_ms);
         }
-        
+
         // Calculate exponential delay
         let exp_factor = self.factor.powi(attempt as i32);
         let calculated_delay = (self.initial_delay_ms as f64 * exp_factor) as u64;
         let capped_delay = min(calculated_delay, self.max_delay_ms);
-        
+
         if self.jitter {
             // Apply jitter (±20%)
             let mut rng = rand::thread_rng();
@@ -89,7 +89,7 @@ impl Backoff for ExponentialBackoff {
             Duration::from_millis(capped_delay)
         }
     }
-    
+
     fn box_clone(&self) -> Box<dyn Backoff> {
         Box::new(self.clone())
     }
@@ -119,19 +119,19 @@ impl LinearBackoff {
             max_delay_ms: 10000,
         }
     }
-    
+
     /// Set the initial delay in milliseconds
     pub fn with_initial_delay(mut self, delay_ms: u64) -> Self {
         self.initial_delay_ms = delay_ms;
         self
     }
-    
+
     /// Set the increment in milliseconds
     pub fn with_increment(mut self, increment_ms: u64) -> Self {
         self.increment_ms = increment_ms;
         self
     }
-    
+
     /// Set the maximum delay in milliseconds
     pub fn with_max_delay(mut self, delay_ms: u64) -> Self {
         self.max_delay_ms = delay_ms;
@@ -145,7 +145,7 @@ impl Backoff for LinearBackoff {
         let capped_delay = min(delay_ms, self.max_delay_ms);
         Duration::from_millis(capped_delay)
     }
-    
+
     fn box_clone(&self) -> Box<dyn Backoff> {
         Box::new(self.clone())
     }
@@ -170,7 +170,7 @@ impl Backoff for FixedBackoff {
     fn next_delay(&self, _attempt: usize) -> Duration {
         Duration::from_millis(self.delay_ms)
     }
-    
+
     fn box_clone(&self) -> Box<dyn Backoff> {
         Box::new(self.clone())
     }
@@ -193,11 +193,11 @@ impl Backoff for Box<dyn Backoff> {
     fn next_delay(&self, attempt: usize) -> Duration {
         (**self).next_delay(attempt)
     }
-    
+
     fn reset(&mut self) {
         (**self).reset()
     }
-    
+
     fn box_clone(&self) -> Box<dyn Backoff> {
         (**self).box_clone()
     }

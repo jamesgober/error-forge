@@ -23,7 +23,7 @@ impl std::error::Error for DbError {}
 fn test_app_error() {
     // Use the built-in AppError
     use error_forge::AppError;
-    
+
     let error = AppError::config("Missing configuration");
     assert_eq!(error.kind(), "Config");
     assert_eq!(error.status_code(), 500);
@@ -33,19 +33,19 @@ fn test_app_error() {
 // Test console theme
 #[test]
 fn test_console_theme() {
-    use error_forge::AppError;
     use error_forge::console_theme::ConsoleTheme;
-    
+    use error_forge::AppError;
+
     let error = AppError::other("Test error");
     let theme = ConsoleTheme::default();
     let formatted = theme.format_error(&error);
-    
+
     // Verify the error message is in the output
     assert!(formatted.contains("Test error"));
-    
+
     // Verify retryable status is displayed
     assert!(formatted.contains("Retryable:"));
-    
+
     // Since AppError::other doesn't have a source, there should be no "Caused by" line
     assert!(!formatted.contains("Caused by:"));
 }

@@ -1,343 +1,343 @@
-<div align="center">
-   <img width="120px" height="auto" src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/icons/hexagon-3.svg" alt="Triple Hexagon">
-    <h1>
-        <strong>Error Forge</strong>
-        <sup><br><sub>API REFERENCE</sub><br></sup>
-    </h1>
-</div>
-<br>
+## API Reference
 
-## Table of Contents
+This document tracks the public surface that is available today. It intentionally favors accuracy over aspiration.
 
-- [Installation](#installation)
-- [Core Traits and Types](#core-traits-and-types)
-  - [ForgeError Trait](#forgeerror-trait)
-  - [AsyncForgeError Trait](#asyncforgeerror-trait)
-  - [Result Type](#result-type)
-- [Macros](#macros)
-  - [define_errors!](#define_errors)
-  - [group!](#group)
-- [Derive Macros](#derive-macros)
-  - [ModError](#moderror)
-- [Error Handling and Display](#error-handling-and-display)
-  - [ConsoleTheme](#consoletheme)
-  - [Error Hooks](#error-hooks)
-  - [Panic Hook](#panic-hook)
-- [Structured Context](#structured-context)
-  - [ContextError](#contexterror)
-  - [Context Methods](#context-methods)
-- [Error Registry](#error-registry)
-  - [ErrorRegistry](#errorregistry)
-  - [Error Codes](#error-codes)
-- [Error Collection](#error-collection)
-  - [ErrorCollector](#errorcollector)
-- [Error Recovery](#error-recovery)
-  - [Backoff Strategies](#backoff-strategies)
-  - [Circuit Breaker](#circuit-breaker)
-  - [Retry Policy](#retry-policy)
-  - [ForgeErrorRecovery](#forgeerrorrecovery)
-- [Async Support](#async-support)
-  - [Async Error Handling](#async-error-handling)
-  - [Async Utilities](#async-utilities)
-- [Examples](#examples)
+## Feature Flags
 
-<br><br>
+| Feature | Enables |
+| --- | --- |
+| `derive` | Re-exports `#[derive(ModError)]` from `error-forge-derive` |
+| `async` | `AsyncForgeError`, `AsyncResult`, and async helpers on `AppError` |
+| `serde` | Serialization derives where supported by the concrete error types |
+| `log` | `logging::log_impl` adapter |
+| `tracing` | `logging::tracing_impl` adapter |
+| `thread-safety` | `once_cell`-backed thread-safe support utilities |
 
-## Installation
+## Core Types
 
-### Install Manually
-```toml
-[dependencies]
-error-forge = "0.9.6"
-```
+### `ForgeError`
 
-### Install Using Cargo
-```bash
-cargo install error-forge
-```
+`ForgeError` is the crate’s central trait. It extends `std::error::Error` with stable metadata that is useful in logs, HTTP layers, workers, and recovery policies.
 
-<br>
-
-## Core Traits and Types
-
-### ForgeError Trait
-
-`ForgeError` is the central trait that defines the common interface for all errors in the Error Forge ecosystem.
-
-**Signature:**
 ```rust
 pub trait ForgeError: std::error::Error + Send + Sync + 'static {
     fn kind(&self) -> &'static str;
     fn caption(&self) -> &'static str;
-    fn is_retryable(&self) -> bool;
-    fn is_fatal(&self) -> bool;
-    fn status_code(&self) -> u16;
-    fn exit_code(&self) -> i32;
-    fn user_message(&self) -> String;
-    fn dev_message(&self) -> String;
-    fn backtrace(&self) -> Option<&Backtrace>;
+    fn is_retryable(&self) -> bool { false }
+    fn is_fatal(&self) -> bool { false }
+    fn status_code(&self) -> u16 { 500 }
+    fn exit_code(&self) -> i32 { 1 }
+    fn user_message(&self) -> String { self.to_string() }
+    fn dev_message(&self) -> String { format!("[{}] {}", self.kind(), self) }
+    fn backtrace(&self) -> Option<&std::backtrace::Backtrace> { None }
     fn register(&self);
 }
 ```
 
-**Methods:**
+Key defaults:
 
-| Method | Return Type | Description |
-|--------|-------------|--------------|
-| `kind()` | `&'static str` | Returns the error kind, typically matching the enum variant name |
-| `caption()` | `&'static str` | Returns a human-readable caption for the error |
-| `is_retryable()` | `bool` | Returns true if the operation can be retried (default: false) |
-| `is_fatal()` | `bool` | Returns true if the error is fatal and should terminate the program (default: true) |
-| `status_code()` | `u16` | Returns an appropriate HTTP status code for the error (default: 500) |
-| `exit_code()` | `i32` | Returns an appropriate process exit code for the error (default: 1) |
-| `user_message()` | `String` | Returns a user-facing message that can be shown to end users |
-| `dev_message()` | `String` | Returns a detailed technical message for developers/logs |
-| `backtrace()` | `Option<&Backtrace>` | Returns a backtrace if available (default: None) |
-| `register()` | `()` | Registers the error with the central error registry |
+- `is_retryable()`: `false`
+- `is_fatal()`: `false`
+- `status_code()`: `500`
+- `exit_code()`: `1`
 
-**Example:**
-```rust
-use error_forge::{ForgeError, define_errors};
+### `AppError`
 
-// Define custom error with ForgeError implementation
-define_errors! {
-    #[derive(Debug)]
-    pub enum MyError {
-        #[error(display = "Failed to process: {message}")]
-        #[kind(Process, retryable = true, status = 503)]
-        Process { message: String },
-    }
-}
+`AppError` is the built-in general-purpose error enum. Variants:
 
-fn example() -> Result<(), Box<dyn ForgeError>> {
-    let error = MyError::process("task interrupted");
-    
-    println!("Kind: {}", error.kind());  // "Process"
-    println!("Retryable: {}", error.is_retryable());  // true
-    println!("Status code: {}", error.status_code());  // 503
-    
-    Err(Box::new(error))
-}
-```
+- `Config`
+- `Filesystem`
+- `Network`
+- `Other`
 
-### AsyncForgeError Trait
+Convenience constructors:
 
-`AsyncForgeError` extends the `ForgeError` trait to support asynchronous error handling in async contexts.
+- `AppError::config(...)`
+- `AppError::filesystem(...)`
+- `AppError::filesystem_with_source(...)`
+- `AppError::network(...)`
+- `AppError::network_with_source(...)`
+- `AppError::other(...)`
 
-**Signature:**
-```rust
-#[async_trait]
-pub trait AsyncForgeError: ForgeError {
-    async fn from_async_result<T, E>(result: Result<T, E>) -> Result<T, Self>
-    where
-        E: std::error::Error + Send + 'static;
-        
-    async fn async_handle<F, T>(self, handler: F) -> Result<T, Self>
-    where
-        F: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, Self>> + Send>> + Send,
-        T: Send;
-}
-```
+Common modifiers:
 
-**Methods:**
+- `with_retryable(bool)`
+- `with_fatal(bool)`
+- `with_status(u16)`
+- `with_code(...)`
+- `context(...)`
 
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `from_async_result` | `result: Result<T, E>` | `Result<T, Self>` | Converts an async result to the implementing error type |
-| `async_handle` | `handler: F` | `Result<T, Self>` | Handles an error in an async context with the provided handler |
+### `Result<T>`
 
-**Example:**
-```rust
-use error_forge::{define_errors, AsyncForgeError};
-use async_trait::async_trait;
-
-define_errors! {
-    pub enum ApiError {
-        #[error(display = "Request to {} failed: {}", endpoint, message)]
-        #[kind(Request, retryable = true, status = 502)]
-        RequestFailed { endpoint: String, message: String },
-    }
-}
-
-#[async_trait]
-impl AsyncForgeError for ApiError {
-    // Implementation provided by the macro
-}
-
-async fn fetch_data(url: &str) -> Result<String, ApiError> {
-    // Some HTTP request that might fail
-    let response = reqwest::get(url).await
-        .map_err(|e| ApiError::request_failed(url.to_string(), e.to_string()))?;
-        
-    if response.status().is_success() {
-        let body = response.text().await
-            .map_err(|e| ApiError::request_failed(url.to_string(), e.to_string()))?;
-        Ok(body)
-    } else {
-        Err(ApiError::request_failed(
-            url.to_string(),
-            format!("Status: {}", response.status())
-        ))
-    }
-}
-
-async fn process_with_retry(url: &str) -> Result<String, ApiError> {
-    let result = fetch_data(url).await;
-    
-    // Handle the error with retry logic
-    if let Err(err) = result {
-        if err.is_retryable() {
-            println!("Retrying request to {}...", url);
-            // Wait and retry
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            return fetch_data(url).await;
-        }
-        return Err(err);
-    }
-    
-    result
-}
-```
-
-### Result Type
-
-`Result` is a type alias for the standard Result with an error type of `AppError`.
-
-**Signature:**
 ```rust
 pub type Result<T> = std::result::Result<T, error_forge::error::AppError>;
 ```
 
-**Example:**
-```rust
-use error_forge::Result;
+## Declarative Macros
 
-fn might_fail() -> Result<String> {
-    // Some operation that might fail
-    if true {
-        Ok("Success".to_string())
-    } else {
-        Err(error_forge::AppError::config("Something went wrong"))
-    }
-}
-```
+### `define_errors!`
 
-<br>
+Use `define_errors!` when you want a custom error enum with generated constructors and `ForgeError` metadata.
 
-## Macros
-
-### define_errors!
-
-The `define_errors!` macro creates rich error enum types with minimal boilerplate, automatically implementing `ForgeError` and other necessary traits.
-
-**Syntax:**
-```rust
-define_errors! {
-    #[attributes]
-    pub enum ErrorName {
-        #[error(display = "format string {param}")]
-        #[kind(KindName, param1 = value1, param2 = value2, ...)]
-        VariantName { param: Type, ... },
-        
-        // Additional variants...
-    }
-}
-```
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `#[error(display = "...")]` | Attribute | Display format string for the error variant |
-| `#[kind(...)]` | Attribute | Kind name and optional parameters |
-| `KindName` | Identifier | Name of the error kind |
-| `retryable` | `bool` | Whether the error is retryable |
-| `status` | `u16` | HTTP status code for the error |
-| `exit` | `i32` | Process exit code for the error |
-| `fatal` | `bool` | Whether the error is fatal |
-
-**Example:**
 ```rust
 use error_forge::define_errors;
 
 define_errors! {
-    #[derive(Debug)]
-    pub enum AppError {
-        #[error(display = "Configuration error: {message}")]
-        #[kind(Config, retryable = false, status = 500)]
+    pub enum ApiError {
+        #[error(display = "Configuration error: {message}", message)]
+        #[kind(Config, status = 500)]
         Config { message: String },
-        
-        #[error(display = "Database error: {message}")]
-        #[kind(Database, retryable = true, status = 503)]
-        Database { message: String },
-        
-        #[error(display = "Network request to {endpoint} failed")]
-        #[kind(Network, retryable = true, status = 502)]
+
+        #[error(display = "Request to {endpoint} failed", endpoint)]
+        #[kind(Network, retryable = true, status = 503)]
         Network { endpoint: String, source: Option<Box<dyn std::error::Error + Send + Sync>> },
     }
 }
-
-// Use the generated constructor methods
-let config_error = AppError::config("Missing configuration file");
-let db_error = AppError::database("Connection timed out");
 ```
 
-### group!
+Rules and behavior:
 
-The `group!` macro composes multi-error enums with automatic `From` conversions for included error types.
+- Each variant requires `#[kind(...)]`.
+- Constructor names are the lowercase form of the variant name.
+- `retryable`, `fatal`, `status`, and `exit` can be supplied inside `#[kind(...)]`.
+- A field named `source` is used for `Error::source()` chaining.
+- If `#[error(display = ...)]` is omitted, display falls back to the caption, variant name, and debug-formatted fields.
 
-**Syntax:**
-```rust
-group! {
-    #[attributes]
-    pub enum ParentError {
-        ErrorType1(ErrorType1),
-        ErrorType2(ErrorType2),
-        // Additional wrapped error types...
-        
-        // Optional custom variants
-        CustomVariant { field: Type, ... },
-    }
-}
-```
+### `group!`
 
-**Parameters:**
+`group!` creates a parent error enum with `From<T>` conversions for wrapped source types.
 
-| Parameter | Description |
-|-----------|--------------|
-| `ParentError` | Name of the parent error enum |
-| `ErrorTypeN` | Error types to wrap |
-| `CustomVariant` | Optional custom error variants |
-
-**Example:**
 ```rust
 use error_forge::{group, AppError};
 use std::io;
 
-// Define a custom error type
-#[derive(Debug, thiserror::Error)]
-pub enum DatabaseError {
-    #[error("Connection failed: {0}")]
+group! {
+    pub enum ServiceError {
+        App(AppError),
+        Io(io::Error),
+    }
+}
+```
+
+This macro is best suited for coarse-grained composition at module or service boundaries.
+
+## Derive Macro
+
+Enable the `derive` feature to use `#[derive(ModError)]`.
+
+Supported attributes:
+
+- `error_prefix`
+- `error_display`
+- `error_kind`
+- `error_caption`
+- `error_retryable`
+- `error_http_status`
+- `error_exit_code`
+- `error_fatal`
+
+Example:
+
+```rust
+use error_forge::{ForgeError, ModError};
+
+#[derive(Debug, ModError)]
+#[error_prefix("Database")]
+enum DbError {
+    #[error_display("Connection failed: {0}")]
+    #[error_retryable]
+    #[error_http_status(503)]
     ConnectionFailed(String),
-    
-    #[error("Query failed: {0}")]
-    QueryFailed(String),
+
+    #[error_display("Permission denied")]
+    #[error_fatal]
+    PermissionDenied,
 }
 
-// Group multiple error types into a parent error
-group! {
-    #[derive(Debug)]
-    pub enum ServiceError {
-        // Include the AppError
-        App(AppError),
-        
-        // Include io::Error
-        Io(io::Error),
-        
-        // Include the custom DatabaseError
-        Database(DatabaseError),
-        
-        // Custom variant
+let err = DbError::ConnectionFailed("primary".into());
+assert!(err.is_retryable());
+assert_eq!(err.status_code(), 503);
+```
+
+## Context and Wrapping
+
+### `ContextError<E, C>`
+
+Wraps an error and an arbitrary context value.
+
+Useful methods:
+
+- `ContextError::new(error, context)`
+- `into_error()`
+- `map_context(...)`
+- `context(...)` to nest additional context layers
+
+### `ResultExt`
+
+Extension trait for `Result<T, E>`:
+
+- `context(value)` eagerly adds context on error
+- `with_context(|| value)` lazily creates context only on error
+
+## Error Codes and Registry
+
+### `register_error_code(...)`
+
+Registers a stable code with description, optional documentation URL, and retryability metadata.
+
+### `WithErrorCode` and `CodedError<E>`
+
+Attach a code to an error with `with_code(...)`.
+
+`CodedError<E>` preserves the underlying error and supports instance-level overrides:
+
+- `with_retryable(bool)`
+- `with_fatal(bool)`
+- `with_status(u16)`
+
+Retryability resolution order:
+
+1. explicit instance override
+2. registered code metadata
+3. underlying error metadata
+
+Status-code resolution order:
+
+1. explicit instance override
+2. underlying error status code
+
+## Collection
+
+### `ErrorCollector<E>`
+
+An accumulator for collecting multiple errors before returning.
+
+Useful methods:
+
+- `new()`
+- `push(...)`
+- `with(...)`
+- `len()`
+- `is_empty()`
+- `into_result(ok_value)`
+- `result(ok_value)`
+- `try_collect(...)`
+- `summary()` for `E: ForgeError`
+- `has_fatal()` for `E: ForgeError`
+- `all_retryable()` for `E: ForgeError`
+
+## Logging and Hooks
+
+### Hook API
+
+Available in `error_forge::macros`:
+
+- `register_error_hook(...)`
+- `try_register_error_hook(...)`
+- `call_error_hook(...)` for internal/generated use
+- `ErrorContext`
+- `ErrorLevel`
+
+`try_register_error_hook(...)` returns an error if a hook was already installed.
+
+### Logging API
+
+Available in `error_forge::logging`:
+
+- `register_logger(...)`
+- `logger()`
+- `log_error(...)`
+- `ErrorLogger`
+- `custom::ErrorLoggerBuilder`
+
+Feature-gated adapters:
+
+- `logging::log_impl::init()` with the `log` feature
+- `logging::tracing_impl::init()` with the `tracing` feature
+
+## Formatting
+
+### `ConsoleTheme`
+
+Provides console-friendly formatting and panic-hook installation.
+
+Useful exports:
+
+- `ConsoleTheme`
+- `print_error(...)`
+- `install_panic_hook()`
+
+## Recovery
+
+The recovery APIs are synchronous.
+
+### Backoff Strategies
+
+- `ExponentialBackoff`
+- `LinearBackoff`
+- `FixedBackoff`
+
+### Retry
+
+- `RetryPolicy::new_exponential()`
+- `RetryPolicy::new_linear()`
+- `RetryPolicy::new_fixed(delay_ms)`
+- `with_max_retries(...)`
+- `executor::<E>()`
+- `forge_executor::<E>()`
+- `retry(...)`
+
+`RetryExecutor` uses blocking sleeps, so it is best suited to sync workloads or dedicated worker threads.
+
+### Circuit Breaker
+
+- `CircuitBreaker::new(name)`
+- `CircuitBreaker::with_config(name, config)`
+- `execute(...)`
+- `state()`
+- `reset()`
+
+States:
+
+- `Closed`
+- `Open`
+- `HalfOpen`
+
+## Async Support
+
+Enabled with the `async` feature.
+
+### `AsyncForgeError`
+
+```rust
+#[async_trait]
+pub trait AsyncForgeError: std::error::Error + Send + Sync + 'static {
+    fn kind(&self) -> &'static str;
+    fn caption(&self) -> &'static str;
+    fn is_retryable(&self) -> bool { false }
+    fn is_fatal(&self) -> bool { false }
+    fn status_code(&self) -> u16 { 500 }
+    fn exit_code(&self) -> i32 { 1 }
+    fn user_message(&self) -> String { self.to_string() }
+    fn dev_message(&self) -> String { format!("[{}] {}", self.kind(), self) }
+    fn backtrace(&self) -> Option<&std::backtrace::Backtrace> { None }
+    async fn async_handle(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn register(&self);
+}
+```
+
+Additional async exports:
+
+- `AsyncResult<T, E>`
+- `AppError::from_async_result(...)`
+- `AppError::handle_async()`
+- `AppError::with_async_context(...)`
+
+## Stability Notes
+
+- The crate is cross-platform and tested on Windows-friendly paths and outputs.
+- Public examples are kept aligned with `cargo test --all-features` and strict Clippy.
+- Recovery helpers are sync-first by design; async runtimes should wrap those patterns intentionally rather than rely on hidden blocking behavior.
         Custom { message: String },
     }
 }

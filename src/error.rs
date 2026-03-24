@@ -1,8 +1,8 @@
-use std::fmt;
-use std::path::PathBuf;
-use std::io;
-use std::error::Error as StdError;
 use std::backtrace::Backtrace;
+use std::error::Error as StdError;
+use std::fmt;
+use std::io;
+use std::path::PathBuf;
 
 #[cfg(feature = "serde")]
 use serde::Serialize;
@@ -14,48 +14,53 @@ pub type Result<T> = std::result::Result<T, crate::error::AppError>;
 pub trait ForgeError: std::error::Error + Send + Sync + 'static {
     /// Returns the kind of error, typically matching the enum variant
     fn kind(&self) -> &'static str;
-    
+
     /// Returns a human-readable caption for the error
     fn caption(&self) -> &'static str;
-    
+
     /// Returns true if the operation can be retried
     fn is_retryable(&self) -> bool {
         false
     }
-    
+
     /// Returns true if the error is fatal and should terminate the program
     fn is_fatal(&self) -> bool {
         false
     }
-    
+
     /// Returns an appropriate HTTP status code for the error
     fn status_code(&self) -> u16 {
         500
     }
-    
+
     /// Returns an appropriate process exit code for the error
     fn exit_code(&self) -> i32 {
         1
     }
-    
+
     /// Returns a user-facing message that can be shown to end users
     fn user_message(&self) -> String {
         self.to_string()
     }
-    
+
     /// Returns a detailed technical message for developers/logs
     fn dev_message(&self) -> String {
         format!("[{}] {}", self.kind(), self)
     }
-    
+
     /// Returns a backtrace if available
     fn backtrace(&self) -> Option<&Backtrace> {
         None
     }
-    
+
     /// Registers the error with the central error registry
     fn register(&self) {
-        crate::macros::call_error_hook(self.caption(), self.kind(), self.is_fatal(), self.is_retryable());
+        crate::macros::call_error_hook(
+            self.caption(),
+            self.kind(),
+            self.is_fatal(),
+            self.is_retryable(),
+        );
     }
 }
 
@@ -64,35 +69,35 @@ pub trait ForgeError: std::error::Error + Send + Sync + 'static {
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub enum AppError {
     /// Configuration-related errors
-    Config { 
+    Config {
         message: String,
         retryable: bool,
         fatal: bool,
         status: u16,
     },
-    
+
     /// Filesystem-related errors with optional path and source error
-    Filesystem { 
-        path: Option<PathBuf>, 
-        #[cfg_attr(feature = "serde", serde(skip))] 
+    Filesystem {
+        path: Option<PathBuf>,
+        #[cfg_attr(feature = "serde", serde(skip))]
         source: io::Error,
         retryable: bool,
         fatal: bool,
         status: u16,
     },
-    
+
     /// Network-related errors
-    Network { 
-        endpoint: String, 
-        #[cfg_attr(feature = "serde", serde(skip))] 
+    Network {
+        endpoint: String,
+        #[cfg_attr(feature = "serde", serde(skip))]
         source: Option<Box<dyn StdError + Send + Sync>>,
         retryable: bool,
         fatal: bool,
         status: u16,
     },
-    
+
     /// Generic errors for anything not covered by specific variants
-    Other { 
+    Other {
         message: String,
         retryable: bool,
         fatal: bool,
@@ -110,14 +115,16 @@ impl std::fmt::Display for AppError {
                 } else {
                     write!(f, "💾 Filesystem Error: {source}")
                 }
-            },
-            Self::Network { endpoint, source, .. } => {
+            }
+            Self::Network {
+                endpoint, source, ..
+            } => {
                 if let Some(src) = source {
                     write!(f, "🌐 Network Error on {endpoint}: {src}")
                 } else {
                     write!(f, "🌐 Network Error on {endpoint}")
                 }
-            },
+            }
             Self::Other { message, .. } => write!(f, "🚨 Error: {message}"),
         }
     }
@@ -127,7 +134,9 @@ impl std::error::Error for AppError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             AppError::Filesystem { source, .. } => Some(source),
-            AppError::Network { source: Some(src), .. } => Some(src.as_ref()),
+            AppError::Network {
+                source: Some(src), ..
+            } => Some(src.as_ref()),
             _ => None,
         }
     }
@@ -135,12 +144,12 @@ impl std::error::Error for AppError {
 
 impl From<io::Error> for AppError {
     fn from(e: io::Error) -> Self {
-        AppError::Filesystem { 
-            path: None, 
-            source: e, 
-            retryable: false, 
-            fatal: true, 
-            status: 500 
+        AppError::Filesystem {
+            path: None,
+            source: e,
+            retryable: false,
+            fatal: true,
+            status: 500,
         }
     }
 }
@@ -154,7 +163,7 @@ impl ForgeError for AppError {
             Self::Other { .. } => "Other",
         }
     }
-    
+
     fn caption(&self) -> &'static str {
         match self {
             Self::Config { .. } => "⚙️ Configuration",
@@ -163,7 +172,7 @@ impl ForgeError for AppError {
             Self::Other { .. } => "🚨 Error",
         }
     }
-    
+
     fn is_retryable(&self) -> bool {
         match self {
             Self::Config { retryable, .. } => *retryable,
@@ -172,7 +181,7 @@ impl ForgeError for AppError {
             Self::Other { retryable, .. } => *retryable,
         }
     }
-    
+
     fn is_fatal(&self) -> bool {
         match self {
             Self::Config { fatal, .. } => *fatal,
@@ -181,7 +190,7 @@ impl ForgeError for AppError {
             Self::Other { fatal, .. } => *fatal,
         }
     }
-    
+
     fn status_code(&self) -> u16 {
         match self {
             Self::Config { status, .. } => *status,
@@ -196,16 +205,21 @@ impl ForgeError for AppError {
 impl AppError {
     /// Create a new Config error
     pub fn config(message: impl Into<String>) -> Self {
-        let instance = Self::Config { 
+        let instance = Self::Config {
             message: message.into(),
             retryable: false,
             fatal: false,
             status: 500,
         };
-        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
+        crate::macros::call_error_hook(
+            instance.caption(),
+            instance.kind(),
+            instance.is_fatal(),
+            instance.is_retryable(),
+        );
         instance
     }
-    
+
     /// Create a new Filesystem error
     pub fn filesystem(path: impl Into<String>, source: impl Into<Option<io::Error>>) -> Self {
         // Convert the source parameter
@@ -213,72 +227,103 @@ impl AppError {
             Some(err) => err,
             None => io::Error::other("File operation failed"),
         };
-        
-        let instance = Self::Filesystem { 
+
+        let instance = Self::Filesystem {
             path: Some(path.into().into()),
             source,
             retryable: false,
             fatal: false,
             status: 500,
         };
-        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
+        crate::macros::call_error_hook(
+            instance.caption(),
+            instance.kind(),
+            instance.is_fatal(),
+            instance.is_retryable(),
+        );
         instance
     }
-    
+
     /// Create a filesystem error with specific source error
     pub fn filesystem_with_source(path: impl Into<PathBuf>, source: io::Error) -> Self {
-        let instance = Self::Filesystem { 
-            path: Some(path.into()), 
+        let instance = Self::Filesystem {
+            path: Some(path.into()),
             source,
             retryable: false,
             fatal: false,
             status: 500,
         };
-        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
+        crate::macros::call_error_hook(
+            instance.caption(),
+            instance.kind(),
+            instance.is_fatal(),
+            instance.is_retryable(),
+        );
         instance
     }
-    
+
     /// Create a new Network error
-    pub fn network(endpoint: impl Into<String>, source: impl Into<Option<Box<dyn StdError + Send + Sync>>>) -> Self {
+    pub fn network(
+        endpoint: impl Into<String>,
+        source: impl Into<Option<Box<dyn StdError + Send + Sync>>>,
+    ) -> Self {
         // Convert the source parameter
         let source = source.into();
-        
-        let instance = Self::Network { 
-            endpoint: endpoint.into(), 
+
+        let instance = Self::Network {
+            endpoint: endpoint.into(),
             source,
             retryable: true,
             fatal: false,
             status: 503,
         };
-        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
+        crate::macros::call_error_hook(
+            instance.caption(),
+            instance.kind(),
+            instance.is_fatal(),
+            instance.is_retryable(),
+        );
         instance
     }
-    
+
     /// Create a network error with specific source error
-    pub fn network_with_source(endpoint: impl Into<String>, source: Option<Box<dyn StdError + Send + Sync>>) -> Self {
-        let instance = Self::Network { 
-            endpoint: endpoint.into(), 
+    pub fn network_with_source(
+        endpoint: impl Into<String>,
+        source: Option<Box<dyn StdError + Send + Sync>>,
+    ) -> Self {
+        let instance = Self::Network {
+            endpoint: endpoint.into(),
             source,
             retryable: true,
             fatal: false,
             status: 503,
         };
-        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
+        crate::macros::call_error_hook(
+            instance.caption(),
+            instance.kind(),
+            instance.is_fatal(),
+            instance.is_retryable(),
+        );
         instance
     }
-    
+
     /// Create a new generic error
     pub fn other(message: impl Into<String>) -> Self {
-        let instance = Self::Other { 
+        let instance = Self::Other {
             message: message.into(),
             retryable: false,
             fatal: false,
             status: 500,
         };
-        crate::macros::call_error_hook(instance.caption(), instance.kind(), instance.is_fatal(), instance.is_retryable());
+        crate::macros::call_error_hook(
+            instance.caption(),
+            instance.kind(),
+            instance.is_fatal(),
+            instance.is_retryable(),
+        );
         instance
     }
-    
+
     /// Set whether this error is retryable
     pub fn with_retryable(mut self, retryable: bool) -> Self {
         match &mut self {
@@ -289,7 +334,7 @@ impl AppError {
         }
         self
     }
-    
+
     /// Set whether this error is fatal
     pub fn with_fatal(mut self, fatal: bool) -> Self {
         match &mut self {
@@ -300,7 +345,7 @@ impl AppError {
         }
         self
     }
-    
+
     /// Set the HTTP status code for this error
     pub fn with_status(mut self, status: u16) -> Self {
         match &mut self {
@@ -311,14 +356,17 @@ impl AppError {
         }
         self
     }
-    
+
     /// Add a code to this error
     pub fn with_code(self, code: impl Into<String>) -> crate::registry::CodedError<Self> {
         crate::registry::CodedError::new(self, code.into())
     }
-    
+
     /// Add context to this error
-    pub fn context<C: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static>(self, context: C) -> crate::context::ContextError<Self, C> {
+    pub fn context<C: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static>(
+        self,
+        context: C,
+    ) -> crate::context::ContextError<Self, C> {
         crate::context::ContextError::new(self, context)
     }
 }

@@ -32,13 +32,57 @@ use std::sync::OnceLock;
 /// Global error hook for centralized error handling
 static ERROR_HOOK: OnceLock<fn(ErrorContext)> = OnceLock::new();
 
+#[doc(hidden)]
+pub trait ErrorSource {
+    fn as_source(&self) -> Option<&(dyn std::error::Error + 'static)>;
+}
+
+impl ErrorSource for std::io::Error {
+    fn as_source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self)
+    }
+}
+
+impl ErrorSource for Box<dyn std::error::Error + Send + Sync> {
+    fn as_source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.as_ref())
+    }
+}
+
+impl ErrorSource for Box<dyn std::error::Error> {
+    fn as_source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.as_ref())
+    }
+}
+
+impl ErrorSource for Option<std::io::Error> {
+    fn as_source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.as_ref()
+            .map(|error| error as &(dyn std::error::Error + 'static))
+    }
+}
+
+impl ErrorSource for Option<Box<dyn std::error::Error + Send + Sync>> {
+    fn as_source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.as_deref()
+            .map(|error| error as &(dyn std::error::Error + 'static))
+    }
+}
+
+impl ErrorSource for Option<Box<dyn std::error::Error>> {
+    fn as_source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.as_deref()
+            .map(|error| error as &(dyn std::error::Error + 'static))
+    }
+}
+
 /// Register a callback function to be called when errors are created
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust
 /// use error_forge::{AppError, macros::{register_error_hook, ErrorLevel, ErrorContext}};
-/// 
+///
 /// // Setup logging with different levels
 /// register_error_hook(|ctx| {
 ///     match ctx.level {
@@ -55,9 +99,18 @@ static ERROR_HOOK: OnceLock<fn(ErrorContext)> = OnceLock::new();
 ///     }
 /// });
 /// ```
-/// 
+///
 pub fn register_error_hook(callback: fn(ErrorContext)) {
-    let _ = ERROR_HOOK.set(callback);
+    let _ = try_register_error_hook(callback);
+}
+
+/// Attempt to register a callback function to be called when errors are created.
+///
+/// Returns an error if a hook is already registered.
+pub fn try_register_error_hook(callback: fn(ErrorContext)) -> Result<(), &'static str> {
+    ERROR_HOOK
+        .set(callback)
+        .map_err(|_| "Error hook already registered")
 }
 
 /// Call the registered error hook with error context if one is registered
@@ -76,7 +129,7 @@ pub fn call_error_hook(caption: &str, kind: &str, is_fatal: bool, is_retryable: 
         } else {
             ErrorLevel::Info
         };
-        
+
         hook(ErrorContext {
             caption,
             kind,
@@ -92,7 +145,7 @@ macro_rules! define_errors {
     (
         $(
             $(#[$meta:meta])* $vis:vis enum $name:ident {
-                $( 
+                $(
                    $(#[error(display = $display:literal $(, $($display_param:ident),* )?)])?
                    #[kind($kind:ident $(, $($tag:ident = $val:expr),* )?)]
                    $variant:ident $( { $($field:ident : $ftype:ty),* $(,)? } )?, )*
@@ -113,8 +166,8 @@ macro_rules! define_errors {
                             let instance = Self::$variant $( { $($field),* } )?;
                             // Call the error hook - no need to directly access ERROR_HOOK here
                             $crate::macros::call_error_hook(
-                                instance.caption(), 
-                                instance.kind(), 
+                                instance.caption(),
+                                instance.kind(),
                                 instance.is_fatal(),
                                 instance.is_retryable()
                             );
@@ -130,7 +183,7 @@ macro_rules! define_errors {
                         } ),*
                     }
                 }
-                
+
                 pub fn kind(&self) -> &'static str {
                     match self {
                         $( Self::$variant { .. } => {
@@ -142,7 +195,7 @@ macro_rules! define_errors {
                 pub fn is_retryable(&self) -> bool {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag retryable false $(, $($tag = $val),* )?)
+                            define_errors!(@get_tag retryable, false $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -150,7 +203,7 @@ macro_rules! define_errors {
                 pub fn is_fatal(&self) -> bool {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag fatal true $(, $($tag = $val),* )?)
+                            define_errors!(@get_tag fatal, false $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -158,7 +211,7 @@ macro_rules! define_errors {
                 pub fn status_code(&self) -> u16 {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag status 500 $(, $($tag = $val),* )?)
+                            define_errors!(@get_tag status, 500 $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -166,7 +219,7 @@ macro_rules! define_errors {
                 pub fn exit_code(&self) -> i32 {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag exit 1 $(, $($tag = $val),* )?)
+                            define_errors!(@get_tag exit, 1 $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -176,7 +229,7 @@ macro_rules! define_errors {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     match self {
                         $( Self::$variant $( { $($field),* } )? => {
-                            $(                                
+                            $(
                                 #[allow(unused_variables)]
                                 if let Some(display) = define_errors!(@format_display $display $(, $($display_param),*)?) {
                                     return write!(f, "{}", display);
@@ -186,7 +239,7 @@ macro_rules! define_errors {
                             write!(f, "{}: ", self.caption())?;
                             write!(f, stringify!($variant))?;
                             // Format each field with name=value
-                            $( $( 
+                            $( $(
                                 write!(f, " | {} = ", stringify!($field))?
                                 ;
                                 match stringify!($field) {
@@ -204,7 +257,7 @@ macro_rules! define_errors {
                 fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
                     match self {
                         $( Self::$variant $( { $($field),* } )? => {
-                            define_errors!(@find_source $($field),*)
+                            define_errors!(@find_source $( $($field),* )? )
                         } ),*
                     }
                 }
@@ -215,56 +268,61 @@ macro_rules! define_errors {
     (@find_source) => {
         None
     };
-    
-    (@find_source $field:ident) => {
-        {
-            let val = $field;
-            if let Some(err) = (val as &dyn std::any::Any).downcast_ref::<&(dyn std::error::Error + 'static)>() {
-                Some(*err)
-            } else {
-                None
-            }
-        }
-    };
-    
-    (@find_source $field:ident, $($rest:ident),+) => {
-        {
-            let val = $field;
-            if let Some(err) = (val as &dyn std::any::Any).downcast_ref::<&(dyn std::error::Error + 'static)>() {
-                Some(*err)
-            } else {
-                define_errors!(@find_source $($rest),+)
-            }
-        }
+
+    (@find_source $field:ident $(, $rest:ident)*) => {
+        define_errors!(@find_source_match $field, $field $(, $rest)*)
     };
 
-    (@get_caption $kind:ident $(, caption = $caption:expr $(, $($rest:tt)*)? )?) => {
-        $crate::define_errors!(@unwrap_caption $kind $(, $caption)? )
+    (@find_source_match source, $source_field:ident $(, $rest:ident)*) => {
+        $crate::macros::ErrorSource::as_source($source_field)
     };
 
-    (@unwrap_caption Config, $caption:expr) => { $caption };
-    (@unwrap_caption Filesystem, $caption:expr) => { $caption };
-    (@unwrap_caption $kind:ident) => { stringify!($kind) };
-
-    (@get_tag $target:ident, $default:expr $(, $($tag:ident = $val:expr),* )?) => {
-        {
-            let mut found = $default;
-            $( $( if stringify!($tag) == stringify!($target) { found = $val; })* )?
-            found
-        }
+    (@find_source_match $field_name:ident, $field:ident $(, $rest:ident)*) => {
+        define_errors!(@find_source $($rest),*)
     };
-    
-    (@format_display $display:literal $(, $($param:ident),*)?) => {
-        {
-            // When parameters are provided, use them for formatting
-            $(
-                Some(format!($display, $($param = $param),*))
-            )?
-            // When no parameters are provided, just use the literal string
-            $(
-                Some($display.to_string())
-            )?
-        }
+
+    (@get_caption $kind:ident) => {
+        stringify!($kind)
+    };
+
+    (@get_caption $kind:ident, caption = $caption:expr $(, $($rest:tt)*)?) => {
+        $caption
+    };
+
+    (@get_caption $kind:ident, $tag:ident = $val:expr $(, $($rest:tt)*)?) => {
+        define_errors!(@get_caption $kind $(, $($rest)*)?)
+    };
+
+    (@get_tag $target:ident, $default:expr) => {
+        $default
+    };
+
+    (@get_tag retryable, $default:expr, retryable = $val:expr $(, $($rest:tt)*)?) => {
+        $val
+    };
+
+    (@get_tag fatal, $default:expr, fatal = $val:expr $(, $($rest:tt)*)?) => {
+        $val
+    };
+
+    (@get_tag status, $default:expr, status = $val:expr $(, $($rest:tt)*)?) => {
+        $val
+    };
+
+    (@get_tag exit, $default:expr, exit = $val:expr $(, $($rest:tt)*)?) => {
+        $val
+    };
+
+    (@get_tag $target:ident, $default:expr, $tag:ident = $val:expr $(, $($rest:tt)*)?) => {
+        define_errors!(@get_tag $target, $default $(, $($rest)*)?)
+    };
+
+    (@format_display $display:literal) => {
+        Some($display.to_string())
+    };
+
+    (@format_display $display:literal, $($param:ident),+) => {
+        Some(format!($display, $($param = $param),+))
     };
 
     // Support for nested field access in error display formatting

@@ -1,12 +1,11 @@
 use crate::error::ForgeError;
-use crate::recovery::{RetryPolicy, CircuitBreaker};
+use crate::recovery::{CircuitBreaker, RetryPolicy};
 
 /// Extension trait that adds recovery capabilities to ForgeError types
 pub trait ForgeErrorRecovery: ForgeError {
     /// Create a retry policy optimized for this error type
     fn create_retry_policy(&self, max_retries: usize) -> RetryPolicy {
-        RetryPolicy::new_exponential()
-            .with_max_retries(max_retries)
+        RetryPolicy::new_exponential().with_max_retries(max_retries)
     }
 
     /// Execute a fallible operation with retries if this error type is retryable

@@ -1,5 +1,5 @@
-use std::error::Error as StdError;
 use std::backtrace::Backtrace;
+use std::error::Error as StdError;
 
 #[cfg(feature = "async")]
 use async_trait::async_trait;
@@ -48,52 +48,57 @@ use async_trait::async_trait;
 pub trait AsyncForgeError: StdError + Send + Sync + 'static {
     /// Returns the kind of error, typically matching the enum variant
     fn kind(&self) -> &'static str;
-    
+
     /// Returns a human-readable caption for the error
     fn caption(&self) -> &'static str;
-    
+
     /// Returns true if the operation can be retried
     fn is_retryable(&self) -> bool {
         false
     }
-    
+
     /// Returns true if the error is fatal and should terminate the program
     fn is_fatal(&self) -> bool {
         false
     }
-    
+
     /// Returns an appropriate HTTP status code for the error
     fn status_code(&self) -> u16 {
         500
     }
-    
+
     /// Returns an appropriate process exit code for the error
     fn exit_code(&self) -> i32 {
         1
     }
-    
+
     /// Returns a user-facing message that can be shown to end users
     fn user_message(&self) -> String {
         self.to_string()
     }
-    
+
     /// Returns a detailed technical message for developers/logs
     fn dev_message(&self) -> String {
         format!("[{}] {}", self.kind(), self)
     }
-    
+
     /// Returns a backtrace if available
     fn backtrace(&self) -> Option<&Backtrace> {
         None
     }
-    
+
     /// Async method to handle the error. This allows implementing custom
     /// async error handling logic.
     async fn async_handle(&self) -> Result<(), Box<dyn StdError + Send + Sync>>;
-    
+
     /// Registers the error with the central error registry
     fn register(&self) {
-        crate::macros::call_error_hook(self.caption(), self.kind(), self.is_fatal(), self.is_retryable());
+        crate::macros::call_error_hook(
+            self.caption(),
+            self.kind(),
+            self.is_fatal(),
+            self.is_retryable(),
+        );
     }
 }
 

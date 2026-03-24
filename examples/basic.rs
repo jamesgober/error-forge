@@ -9,7 +9,9 @@ pub enum MyError {
 
 impl MyError {
     pub fn config(msg: impl Into<String>) -> Self {
-        MyError::Config { message: msg.into() }
+        MyError::Config {
+            message: msg.into(),
+        }
     }
 
     pub fn caption(&self) -> &'static str {
@@ -31,7 +33,6 @@ impl MyError {
         }
     }
 }
-
 
 impl fmt::Display for MyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

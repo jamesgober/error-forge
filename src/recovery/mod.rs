@@ -8,18 +8,14 @@
 //! - Backoff strategies for controlling retry timing
 //! - Circuit breaker pattern to prevent cascading failures
 //! - Retry policies for flexible retry behaviors
+//! - `ForgeError`-aware retry executors for sync workloads
 //!
 //! # Examples
 //!
 //! ```rust,ignore
-//! use error_forge::recovery::{ExponentialBackoff, RetryPolicy};
+//! use error_forge::recovery::RetryPolicy;
 //!
-//! let backoff = ExponentialBackoff::new()
-//!     .with_initial_delay(100)
-//!     .with_max_delay(10000)
-//!     .with_jitter(true);
-//!
-//! let policy = RetryPolicy::new(backoff)
+//! let policy = RetryPolicy::new_exponential()
 //!     .with_max_retries(3);
 //!
 //! let result = policy.retry(|| {
@@ -30,13 +26,14 @@
 
 mod backoff;
 mod circuit_breaker;
-mod retry;
 mod forge_extensions;
+mod retry;
 
-pub use backoff::{Backoff, ExponentialBackoff, LinearBackoff, FixedBackoff};
-pub use circuit_breaker::{CircuitBreaker, CircuitState, CircuitOpenError, CircuitBreakerConfig};
-pub use retry::{RetryPolicy, RetryExecutor};
+pub use backoff::{Backoff, ExponentialBackoff, FixedBackoff, LinearBackoff};
+pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitOpenError, CircuitState};
 pub use forge_extensions::ForgeErrorRecovery;
+pub use retry::{RetryExecutor, RetryPolicy};
 
 /// Result type for recovery operations
-pub type RecoveryResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
+pub type RecoveryResult<T> =
+    std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;

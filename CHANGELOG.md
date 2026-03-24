@@ -8,10 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added `try_register_error_hook(...)` so applications can detect duplicate hook registration explicitly.
+- Added regression coverage for `define_errors!`, `#[derive(ModError)]`, coded-error overrides, and feature-gated behavior.
 
 ### Changed
+- Rewrote the public README and API reference to match the real crate surface, supported attributes, and current recovery model.
+- Updated crate-level and recovery module documentation examples to reflect the current API.
+- Made `define_errors!` default `fatal` behavior consistent with `ForgeError` and `AppError` by defaulting to `false`.
 
 ### Fixed
+- Fixed `CodedError::with_retryable(...)` and `CodedError::with_status(...)` so they now apply real per-instance overrides.
+- Fixed `define_errors!` helper expansion bugs affecting tag parsing, display formatting, and source chaining.
+- Fixed the derive macro so list-style attributes such as `#[error_display("...")]` and `#[error_http_status(...)]` are honored.
+- Fixed strict lint failures so `cargo clippy --all-targets --all-features -- -D warnings` now passes cleanly.
+- Removed stale documentation that described unsupported APIs or outdated examples.
 
 ## [0.9.6] - 2025-08-17
 

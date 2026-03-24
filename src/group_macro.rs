@@ -4,16 +4,16 @@
 use std::error::Error as StdError;
 
 /// Macro for composing multi-error enums with automatic `From<OtherError>` conversions.
-/// 
+///
 /// This macro allows you to create a parent error type that can wrap multiple other error types,
 /// automatically implementing From conversions for each of them.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```ignore
 /// use error_forge::{group, AppError};
 /// use std::io;
-/// 
+///
 /// // Define a custom error type for a specific module
 /// #[derive(Debug, thiserror::Error)]
 /// pub enum DatabaseError {
@@ -23,7 +23,7 @@ use std::error::Error as StdError;
 ///     #[error("Query failed: {0}")]
 ///     QueryFailed(String),
 /// }
-/// 
+///
 /// // Group multiple error types into a parent error
 /// group! {
 ///     #[derive(Debug)]
@@ -63,7 +63,7 @@ macro_rules! group {
             )*
         )
     };
-    
+
     // Internal implementation with all necessary impls
     (@with_impl
         $(#[$meta:meta])* $vis:vis enum $name:ident {
@@ -132,7 +132,7 @@ macro_rules! group {
                     $(
                         Self::$variant(source) => {
                             if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>() 
+                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
                             {
                                 return forge_err.kind();
                             }
@@ -144,13 +144,13 @@ macro_rules! group {
                     )*
                 }
             }
-            
+
             fn user_message(&self) -> String {
                 match self {
                     $(
                         Self::$variant(source) => {
                             if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>() 
+                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
                             {
                                 return forge_err.user_message();
                             }
@@ -162,13 +162,13 @@ macro_rules! group {
                     )*
                 }
             }
-            
+
             fn caption(&self) -> &'static str {
                 match self {
                     $(
                         Self::$variant(source) => {
                             if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>() 
+                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
                             {
                                 return forge_err.caption();
                             }
@@ -182,13 +182,13 @@ macro_rules! group {
                     )*
                 }
             }
-            
+
             fn is_retryable(&self) -> bool {
                 match self {
                     $(
                         Self::$variant(source) => {
                             if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>() 
+                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
                             {
                                 return forge_err.is_retryable();
                             }
@@ -198,13 +198,13 @@ macro_rules! group {
                     _ => false,
                 }
             }
-            
+
             fn status_code(&self) -> u16 {
                 match self {
                     $(
                         Self::$variant(source) => {
                             if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>() 
+                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
                             {
                                 return forge_err.status_code();
                             }
@@ -214,13 +214,13 @@ macro_rules! group {
                     _ => 500,
                 }
             }
-            
+
             fn exit_code(&self) -> i32 {
                 match self {
                     $(
                         Self::$variant(source) => {
                             if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>() 
+                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
                             {
                                 return forge_err.exit_code();
                             }
