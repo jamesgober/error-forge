@@ -3,7 +3,16 @@
     <h1>
         <strong>ERROR FORGE</strong>
     </h1>
-<p>Pragmatic error modeling, contextual diagnostics, and resilience helpers for Rust.</p>
+</div>
+<div align="center">
+    <a href="https://crates.io/crates/error-forge" alt="Error Forge on Crates.io"><img alt="Crates.io" src="https://img.shields.io/crates/v/error-forge"></a>
+    <a href="https://crates.io/crates/error-forge" alt="Download Error Forge"><img alt="Crates.io Downloads" src="https://img.shields.io/crates/d/error-forge?color=%230099ff"></a>
+    <a href="https://docs.rs/error-forge" title="Documentation"><img alt="docs.rs" src="https://img.shields.io/docsrs/error-forge"></a>
+    <a href="https://github.com/jamesgober/error-forge/actions/workflows/ci.yml" title="CI status"><img alt="CI" src="https://github.com/jamesgober/error-forge/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+</div>
+<br>
+<div align="center">
+    <p>Pragmatic error modeling, contextual diagnostics, and resilience helpers for Rust.</p>
 </div>
 
 Error Forge is a Rust error-handling crate built around a few simple ideas:
