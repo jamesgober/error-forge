@@ -1,7 +1,9 @@
 <div align="center">
-  <img width="120" height="auto" src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/icons/hexagon-3.svg" alt="Error Forge logo">
-  <h1><strong>Error Forge</strong></h1>
-  <p>Pragmatic error modeling, contextual diagnostics, and resilience helpers for Rust.</p>
+        <img width="99" alt="Rust logo" src="https://raw.githubusercontent.com/jamesgober/rust-collection/72baabd71f00e14aa9184efcb16fa3deddda3a0a/assets/rust-logo.svg">
+    <h1>
+        <strong>ERROR FORGE</strong>
+    </h1>
+<p>Pragmatic error modeling, contextual diagnostics, and resilience helpers for Rust.</p>
 </div>
 
 Error Forge is a Rust error-handling crate built around a few simple ideas:
@@ -263,3 +265,13 @@ The crate is validated with:
 ## License
 
 Licensed under Apache-2.0.
+
+
+<!--
+:: COPYRIGHT
+============================================================================ -->
+<div align="center">
+  <br>
+  <h2></h2>
+  <sup>COPYRIGHT <small>&copy;</small> 2025 <strong>JAMES GOBER.</strong></sup>
+</div>
