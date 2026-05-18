@@ -11,9 +11,17 @@ use async_trait::async_trait;
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// Requires the `async` cargo feature (which pulls in `async-trait`).
+/// The hidden `#[cfg(feature = "async")]` gate means this doctest is
+/// only compiled when the feature is enabled — when running
+/// `cargo test --all-features` it executes normally, and when the
+/// feature is off it is silently skipped.
+///
+/// ```
+/// # #[cfg(feature = "async")] {
 /// use error_forge::async_error::AsyncForgeError;
 /// use async_trait::async_trait;
+/// use std::error::Error as StdError;
 ///
 /// #[derive(Debug)]
 /// struct MyAsyncError { message: String }
@@ -28,20 +36,14 @@ use async_trait::async_trait;
 ///
 /// #[async_trait]
 /// impl AsyncForgeError for MyAsyncError {
-///     fn kind(&self) -> &'static str {
-///         "AsyncExample"
-///     }
-///     
-///     fn caption(&self) -> &'static str {
-///         "Async Example Error"
-///     }
-///     
+///     fn kind(&self) -> &'static str { "AsyncExample" }
+///     fn caption(&self) -> &'static str { "Async Example Error" }
+///
 ///     async fn async_handle(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
-///         // Perform async error handling here
-///         println!("Handling async error: {}", self);
 ///         Ok(())
 ///     }
 /// }
+/// # }
 /// ```
 #[cfg(feature = "async")]
 #[async_trait]

@@ -1,7 +1,15 @@
 [package]
 name = "error-forge"
-version = "0.9.7"
+version = "0.9.8"
 edition = "2021"
+# MSRV. The crate uses `io::Error::other` (stabilised 1.74),
+# `Mutex::new()` in const context (1.63 — fine), and Cargo lockfile
+# format v4 (default since 1.78, can't be parsed by older
+# toolchains). `1.81` is also the floor required by clippy's
+# `incompatible_msrv` lint on the current source, and matches
+# `mod-events` in this workspace for consistency. CI verifies on
+# 1.81.0 in a dedicated MSRV job.
+rust-version = "1.81"
 readme = "README.md"
 license = "Apache-2.0"
 
@@ -9,7 +17,7 @@ authors = [
     "James Gober <me@jamesgober.com>"
 ]
 
-description = "A comprehensive Rust error management framework with async support, error recovery patterns, and resilience features for building robust, fault-tolerant applications with rich error handling, formatting, and tracing capabilities."
+description = "Pragmatic Rust error-handling framework with stable error metadata, contextual diagnostics, optional async support, and synchronous recovery primitives (retry, circuit-breaker, backoff). Optional #[derive(ModError)], declarative define_errors!, and feature-gated logging / tracing / serde adapters."
 
 keywords = [
     "error",
@@ -43,10 +51,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 thiserror = "1.0"
 paste = "1.0"
-error-forge-derive = {version = "0.9.7", path = "./error-forge-derive", optional = true }
+error-forge-derive = {version = "0.9.8", path = "./error-forge-derive", optional = true }
 serde = { version = "1.0", optional = true, features = ["derive"] }
-atty = "0.2"
-once_cell = { version = "1.8", optional = true }
 log = { version = "0.4", optional = true }
 tracing = { version = "0.1", optional = true }
 async-trait = { version = "0.1.74", optional = true }
@@ -58,7 +64,6 @@ derive = ["error-forge-derive"]
 serde = ["dep:serde"]
 console = []
 backtrace = []
-thread-safety = ["dep:once_cell"]
 log = ["dep:log"]
 tracing = ["dep:tracing"]
 registry = []

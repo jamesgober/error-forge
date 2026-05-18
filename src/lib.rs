@@ -6,17 +6,17 @@
 //!
 //! It provides:
 //!
-//! - `ForgeError` for stable error metadata
-//! - `AppError` for immediate use in small and medium projects
-//! - `define_errors!` for declarative custom enums
-//! - `group!` for coarse-grained composition
+//! - [`ForgeError`] for stable error metadata
+//! - [`AppError`] for immediate use in small and medium projects
+//! - [`define_errors!`] for declarative custom enums
+//! - [`group!`] for coarse-grained composition
 //! - optional derive support with `#[derive(ModError)]`
 //! - context wrapping, error codes, collectors, logging hooks, and console formatting
-//! - synchronous retry and circuit-breaker helpers in `recovery`
+//! - synchronous retry and circuit-breaker helpers in [`recovery`]
 //!
 //! ## Quick Start
 //!
-//! ```ignore
+//! ```
 //! use error_forge::{define_errors, ForgeError};
 //!
 //! define_errors! {
@@ -37,7 +37,7 @@
 //!
 //! ## Built-in Formatting
 //!
-//! ```rust
+//! ```
 //! use error_forge::{console_theme::print_error, AppError};
 //!
 //! let error = AppError::config("Database connection failed");
@@ -80,9 +80,6 @@ pub use crate::logging::{log_error, logger, register_logger, ErrorLogger};
 #[cfg(feature = "async")]
 pub use crate::async_error::{AsyncForgeError, AsyncResult};
 
-#[cfg(feature = "serde")]
-extern crate serde;
-
 // Re-export macros for convenient use
 #[allow(unused_imports)]
 pub use crate::macros::*;
@@ -96,10 +93,6 @@ pub use error_forge_derive::*;
 #[cfg(test)]
 mod tests {
     use crate::ForgeError;
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
 
     #[test]
     fn test_error_display() {

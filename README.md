@@ -8,6 +8,7 @@
     <a href="https://crates.io/crates/error-forge" alt="Error Forge on Crates.io"><img alt="Crates.io" src="https://img.shields.io/crates/v/error-forge"></a>
     <a href="https://crates.io/crates/error-forge" alt="Download Error Forge"><img alt="Crates.io Downloads" src="https://img.shields.io/crates/d/error-forge?color=%230099ff"></a>
     <a href="https://docs.rs/error-forge" title="Documentation"><img alt="docs.rs" src="https://img.shields.io/docsrs/error-forge"></a>
+    <img alt="MSRV" src="https://img.shields.io/badge/MSRV-1.81%2B-blue.svg?style=flat-square" title="Minimum Supported Rust Version">
     <a href="https://github.com/jamesgober/error-forge/actions/workflows/ci.yml" title="CI status"><img alt="CI" src="https://github.com/jamesgober/error-forge/actions/workflows/ci.yml/badge.svg?branch=main"></a>
 </div>
 <br>
@@ -28,8 +29,10 @@ It ships with a built-in `AppError`, a declarative `define_errors!` macro, an op
 
 ```toml
 [dependencies]
-error-forge = "0.9.7"
+error-forge = "0.9.8"
 ```
+
+MSRV: Rust `1.81`. CI verifies the crate builds on the exact `1.81.0` toolchain. (The crate uses `io::Error::other` (1.74) and the committed `Cargo.lock` is format v4, which requires `1.78+` to parse; `1.81` is the conservative floor.)
 
 Common optional features:
 

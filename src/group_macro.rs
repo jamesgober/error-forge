@@ -14,31 +14,36 @@ use std::error::Error as StdError;
 /// use error_forge::{group, AppError};
 /// use std::io;
 ///
-/// // Define a custom error type for a specific module
-/// #[derive(Debug, thiserror::Error)]
-/// pub enum DatabaseError {
-///     #[error("Connection failed: {0}")]
-///     ConnectionFailed(String),
-///     
-///     #[error("Query failed: {0}")]
-///     QueryFailed(String),
-/// }
-///
-/// // Group multiple error types into a parent error
 /// group! {
 ///     #[derive(Debug)]
 ///     pub enum ServiceError {
-///         // Include the AppError
 ///         App(AppError),
-///         
-///         // Include io::Error
 ///         Io(io::Error),
-///         
-///         // Include the custom DatabaseError
-///         Database(DatabaseError),
 ///     }
 /// }
 /// ```
+///
+/// # Known limitations (scheduled for `1.0`)
+///
+/// 1. **Macro-parse ambiguity.** The doctest above is marked
+///    `ignore` because the macro's internal `@with_impl` arm has
+///    two competing repetition blocks (`$variant` for wrapped
+///    types and `$variant_extra` for free-form variants) that the
+///    parser cannot disambiguate cleanly. `group!` works in
+///    practice as exercised by `tests/`, but a top-level doctest
+///    invocation trips the ambiguity. The macro will be rewritten
+///    with unambiguous tokens in `1.0`.
+/// 2. **Broken `ForgeError` delegation.** The generated
+///    `ForgeError` impl tries to delegate `kind` / `status_code` /
+///    `is_retryable` to the wrapped variant's own `ForgeError`
+///    impl, but the type-erased downcast pattern used internally
+///    does not work as intended. In practice every wrapped variant
+///    gets the fallback values (`stringify!($variant)` for `kind`,
+///    `500` for `status_code`, `false` for `is_retryable`). The
+///    `Display`, `Error::source()`, and `From<T>` parts work
+///    correctly. The delegation will be rewritten in `1.0` to
+///    require `: ForgeError` on each wrapped type and call its
+///    trait methods directly.
 #[macro_export]
 macro_rules! group {
     // First pattern - simple wrapped errors without extra variants

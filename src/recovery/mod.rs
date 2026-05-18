@@ -12,16 +12,15 @@
 //!
 //! # Examples
 //!
-//! ```rust,ignore
+//! ```
 //! use error_forge::recovery::RetryPolicy;
 //!
-//! let policy = RetryPolicy::new_exponential()
-//!     .with_max_retries(3);
+//! let policy = RetryPolicy::new_exponential().with_max_retries(3);
 //!
-//! let result = policy.retry(|| {
-//!     // Operation that might fail
-//!     Ok(())
-//! });
+//! // The operation must declare its error type so the policy can
+//! // type-check the retry loop. Here we use `std::io::Error`.
+//! let result: Result<(), std::io::Error> = policy.retry(|| Ok(()));
+//! assert!(result.is_ok());
 //! ```
 
 mod backoff;

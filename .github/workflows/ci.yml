@@ -55,3 +55,27 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --all-features --no-deps
+
+  # MSRV verification. `rust-version` in `Cargo.toml` declares the
+  # floor; this job builds on that exact toolchain to catch any
+  # accidental use of newer-than-MSRV APIs.
+  msrv:
+    name: MSRV (Rust 1.81)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.81.0
+      - name: Build (all features)
+        run: cargo build --workspace --all-features
+
+  # Security advisory scan. Runs `cargo audit` against the RustSec
+  # database on every push so deprecated / vulnerable transitive
+  # crates surface immediately.
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v1.4.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

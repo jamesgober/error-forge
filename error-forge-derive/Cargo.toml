@@ -1,7 +1,8 @@
 [package]
 name = "error-forge-derive"
-version = "0.9.7"
+version = "0.9.8"
 edition = "2021"
+rust-version = "1.81"
 description = "Derive macros for the error-forge crate"
 license = "Apache-2.0"
 documentation = "https://docs.rs/error-forge"
