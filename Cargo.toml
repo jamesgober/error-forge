@@ -50,7 +50,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 thiserror = "1.0"
-paste = "1.0"
+# `pastey` is a drop-in fork of `paste`. The original `paste` crate
+# was archived by its author on 2024-10-07 (RUSTSEC-2024-0436,
+# "unmaintained"); `pastey` keeps the public `paste!` macro API and
+# behaviour, with the same `[<...>]` token-pasting and case-modifier
+# syntax `define_errors!` relies on.
+pastey = "0.2"
 error-forge-derive = {version = "0.9.8", path = "./error-forge-derive", optional = true }
 serde = { version = "1.0", optional = true, features = ["derive"] }
 log = { version = "0.4", optional = true }

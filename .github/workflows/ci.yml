@@ -71,9 +71,18 @@ jobs:
   # Security advisory scan. Runs `cargo audit` against the RustSec
   # database on every push so deprecated / vulnerable transitive
   # crates surface immediately.
+  #
+  # `permissions.checks: write` is required because
+  # `rustsec/audit-check` posts findings as GitHub Check Runs, which
+  # the default workflow token cannot write. Without this block the
+  # action fails with "Resource not accessible by integration"
+  # immediately after running.
   audit:
     name: cargo audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v1.4.1

@@ -88,6 +88,19 @@ pub use crate::macros::*;
 #[cfg(feature = "derive")]
 pub use error_forge_derive::*;
 
+/// Internal re-exports for use by macros expanded in user crates.
+///
+/// This module is not part of the public API. Items here may
+/// change at any time without notice. They are exposed only so
+/// that `define_errors!` (and other macros that expand into user
+/// code) can reference dependencies through `$crate::__private::*`
+/// without forcing every user to add those crates to their own
+/// `Cargo.toml`.
+#[doc(hidden)]
+pub mod __private {
+    pub use pastey;
+}
+
 // Extension methods are implemented in error.rs
 
 #[cfg(test)]

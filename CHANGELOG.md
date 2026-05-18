@@ -14,7 +14,8 @@ Cleanup release. Drops the deprecated `atty` dependency, prunes a dead feature f
 ### Added
 - `rust-version = "1.81"` in `Cargo.toml`. MSRV is now declared explicitly and CI runs a dedicated MSRV-pin job verifying the crate builds against the exact `1.81.0` toolchain. The floor is driven by three independent constraints: `io::Error::other` (used by `AppError::filesystem` builders) is stable since 1.74; clippy's `incompatible_msrv` lint flags additional 1.81 items in the current source; and the committed `Cargo.lock` is format v4, which Cargo cannot parse on toolchains older than 1.78. `1.81` is the conservative floor that satisfies all three and matches `mod-events` in the workspace for consistency.
 - `MSRV` badge in `README.md`.
-- `cargo audit` CI job that runs the RustSec advisory database against every push.
+- `cargo audit` CI job that runs the RustSec advisory database against every push. The job declares `permissions: { contents: read, checks: write }` so the `rustsec/audit-check` action can post findings as GitHub Check Runs without hitting `Resource not accessible by integration`.
+- `#[doc(hidden)] pub mod __private` in `lib.rs` re-exporting `pastey` so that `define_errors!` expansions in downstream crates do not require the user to add the dep manually.
 - `.dev/release/v0.9.8.md` release note describing the full cleanup scope.
 
 ### Changed
@@ -32,9 +33,12 @@ Cleanup release. Drops the deprecated `atty` dependency, prunes a dead feature f
 
 ### Fixed
 - **Replaced `atty` with `std::io::IsTerminal`.** `atty` is unmaintained and on the RustSec radar (RUSTSEC-2021-0145 — unaligned-read race). `std::io::IsTerminal` (stable since Rust 1.70) is the canonical replacement and lets `error-forge` drop the dependency entirely. Affects `console_theme::terminal_supports_ansi`; behaviour is unchanged from the user's perspective.
+- **Replaced `paste` with `pastey`.** `paste 1.0.15` is unmaintained as of 2024-10-07 (RUSTSEC-2024-0436 — the author archived the repo). `pastey 0.2.2` is the published drop-in fork: identical `paste!` macro semantics, same `[<...>]` token-pasting and case-modifier syntax that `define_errors!` relies on. `cargo audit` now reports zero warnings on the committed `Cargo.lock`.
+- **Audit CI job permissions.** Added `permissions: { contents: read, checks: write }` to the `audit` job so the `rustsec/audit-check` action's Check Run posting no longer fails with `Resource not accessible by integration`.
 
 ### Removed
 - **`atty` dependency.** No longer needed after the `IsTerminal` migration.
+- **`paste` dependency.** Replaced by `pastey`; see Fixed section.
 - **`once_cell` dependency and the `thread-safety` feature flag** that gated it. `once_cell::sync::OnceCell` was never imported anywhere in the crate — every `OnceLock` usage was already `std::sync::OnceLock` (stable since `1.70`). The `thread-safety` feature was dead code; enabling it added a dep with no behaviour change.
 - **`extern crate serde;`** from `lib.rs`. This Rust 2015 idiom is unnecessary in 2021 edition and provided no functional value.
 - **Placeholder `it_works` test from `lib.rs`** (`assert_eq!(2 + 2, 4);`). The two remaining inline tests (`test_error_display`, `test_error_kind`) carry actual coverage; placeholder cruft is gone.

@@ -161,7 +161,7 @@ macro_rules! define_errors {
 
             impl $name {
                 $(
-                    paste::paste! {
+                    $crate::__private::pastey::paste! {
                         pub fn [<$variant:lower>]($($($field : $ftype),*)?) -> Self {
                             let instance = Self::$variant $( { $($field),* } )?;
                             // Call the error hook - no need to directly access ERROR_HOOK here
