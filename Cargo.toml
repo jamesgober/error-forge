@@ -59,7 +59,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 
 [dependencies]
-thiserror = "1.0"
+thiserror = "2.0"
 # `pastey` is a drop-in fork of `paste`. The original `paste` crate
 # was archived by its author on 2024-10-07 (RUSTSEC-2024-0436,
 # "unmaintained"); `pastey` keeps the public `paste!` macro API and
