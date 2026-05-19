@@ -82,7 +82,7 @@ async-trait = { version = "0.1.74", optional = true }
 # never call `ExponentialBackoff::with_jitter(true)` don't pay for
 # `rand`'s transitive deps (`getrandom`, `rand_core`, `rand_chacha`,
 # `ppv-lite86`).
-rand = { version = "0.8.5", optional = true }
+rand = { version = "0.10.1", optional = true }
 
 [features]
 default = []
