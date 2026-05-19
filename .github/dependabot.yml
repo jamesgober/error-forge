@@ -17,6 +17,23 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # Ignore major bumps that require source-level migration. They
+    # come back as candidates for the next minor release (tracked
+    # in `.dev/ROADMAP.md`), not as auto-applied PRs.
+    ignore:
+      # `rand 0.10` renamed `thread_rng()` to `rng()` and shifted
+      # `Rng::gen_range` signature. Migration is intentional — see
+      # ROADMAP §1.x backlog.
+      - dependency-name: "rand"
+        update-types: ["version-update:semver-major"]
+      # `thiserror 2.0` is a major bump scheduled for a future
+      # minor release after audit.
+      - dependency-name: "thiserror"
+        update-types: ["version-update:semver-major"]
+      # `syn 2.0` requires reworking the derive crate's `Meta`
+      # parsing. Scheduled for a future minor release.
+      - dependency-name: "syn"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions ecosystem updates. Same grouping discipline.
   - package-ecosystem: "github-actions"
