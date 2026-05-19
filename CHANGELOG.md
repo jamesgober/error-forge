@@ -50,6 +50,12 @@ Stable API. The public surface is locked under SemVer for the entire `1.x` line 
 
 Both deprecations stay callable through the entire `1.x` line; they are removed only in `2.0`.
 
+### Security
+
+- **`Cargo.lock` updated** to clear two RustSec advisories surfaced by `cargo-deny check`:
+  - **GHSA-434x-w66g-qw3r / bytes 1.10.1** (integer overflow in `BytesMut::reserve`). Pulled patched `bytes 1.11.1` into the lockfile. Transitive via `tokio` (dev-only — does not affect consumers).
+  - **RUSTSEC-2026-0097 / rand 0.8.5** (unsoundness in `rand::rng()` under a custom-logger + reseed scenario). Pulled patched `rand 0.8.6` into the lockfile. Only pulled in under the optional `jitter` feature; the unsoundness conditions do not apply to `error-forge`'s usage, but updating clears the advisory regardless.
+
 ### Compatibility
 
 - MSRV stays at Rust `1.81`. No bump.
