@@ -82,22 +82,21 @@ jobs:
   # database on every push so deprecated / vulnerable transitive
   # crates surface immediately.
   #
-  # `permissions.checks: write` is required because
-  # `rustsec/audit-check` posts findings as GitHub Check Runs, which
-  # the default workflow token cannot write. Without this block the
-  # action fails with "Resource not accessible by integration"
-  # immediately after running.
+  # We invoke `cargo audit` directly rather than through
+  # `rustsec/audit-check`, which is a Node.js 20 JavaScript action
+  # (deprecated by GitHub on 2025-09-19, removed 2026-09-16). The
+  # `cargo-deny` job below runs in parallel and overlaps coverage;
+  # this job is the lightweight RUSTSEC-database-only scan.
   audit:
     name: cargo audit
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
     steps:
       - uses: actions/checkout@v5
-      - uses: rustsec/audit-check@v1.4.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: Run cargo audit
+        run: cargo audit --deny warnings
 
   # License + duplicate-version policy enforcement via `cargo deny`.
   # The `deny.toml` config in the repo root pins the allow-list of
