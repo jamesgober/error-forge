@@ -1,0 +1,49 @@
+version: 2
+
+updates:
+  # Cargo dependency updates.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    # Group minor + patch updates so the per-cycle PR count stays
+    # manageable. Major bumps still get their own PR per crate so
+    # breaking changes aren't hidden inside a group.
+    groups:
+      cargo-minor-and-patch:
+        applies-to: "version-updates"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions ecosystem updates. Same grouping discipline.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      actions-official-minor-and-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "actions/*"
+        update-types:
+          - "minor"
+          - "patch"
+      actions-third-party-minor-and-patch:
+        applies-to: "version-updates"
+        exclude-patterns:
+          - "actions/*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # `dtolnay/rust-toolchain` uses Rust version numbers as tags
+      # (e.g. `@1.81.0` in the MSRV job). Dependabot mistakes them
+      # for action versions and proposes bumps to non-existent
+      # toolchains. The MSRV pin must track `Cargo.toml`'s
+      # `rust-version` field manually.
+      - dependency-name: "dtolnay/rust-toolchain"

@@ -7,8 +7,26 @@ use std::path::PathBuf;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
-/// Type alias for error-forge results.
-pub type Result<T> = std::result::Result<T, crate::error::AppError>;
+/// Type alias for `error-forge` results using [`AppError`] as the
+/// error variant.
+///
+/// Prefer this over the historical [`Result`] alias — the
+/// `AppResult` name does not shadow [`std::result::Result`] in
+/// `use error_forge::*` glob imports.
+pub type AppResult<T> = std::result::Result<T, crate::error::AppError>;
+
+/// Historical alias for [`AppResult`].
+///
+/// **Deprecated since `1.0.0`** — the unqualified `Result` name
+/// shadows [`std::result::Result`] in `use error_forge::*` glob
+/// imports, which is a quiet footgun in caller code. Use
+/// [`AppResult`] instead.
+#[deprecated(
+    since = "1.0.0",
+    note = "use `error_forge::AppResult` instead — the unqualified `Result` \
+            name shadows `std::result::Result` in glob imports"
+)]
+pub type Result<T> = AppResult<T>;
 
 /// Base trait for all custom error variants.
 pub trait ForgeError: std::error::Error + Send + Sync + 'static {

@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [ main ]
 
+# Node.js 20 was deprecated on GitHub Actions runners on 2025-09-19
+# and will be removed on 2026-09-16; the default JavaScript-action
+# runtime switches to Node.js 24 on 2026-06-02. We set this flag
+# now so every JS-action step in this workflow runs on Node 24,
+# regardless of which Node version the action itself declares. The
+# flag is a no-op for the actions that already target Node 24
+# natively (e.g. `actions/checkout@v5`).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build-test:
     runs-on: ${{ matrix.os }}
@@ -24,7 +34,7 @@ jobs:
           - "derive serde console backtrace"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -37,7 +47,7 @@ jobs:
   full-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Check all features
@@ -48,7 +58,7 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Check documentation
@@ -63,7 +73,7 @@ jobs:
     name: MSRV (Rust 1.81)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.81.0
       - name: Build (all features)
         run: cargo build --workspace --all-features
@@ -84,7 +94,20 @@ jobs:
       contents: read
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: rustsec/audit-check@v1.4.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # License + duplicate-version policy enforcement via `cargo deny`.
+  # The `deny.toml` config in the repo root pins the allow-list of
+  # permissive licenses, bans wildcard version requirements, and
+  # restricts dep sources to `crates.io`.
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check all

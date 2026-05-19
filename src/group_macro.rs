@@ -1,52 +1,61 @@
-/// Provides macros for grouping errors and generating automatic conversions
-// StdError used in generated code from macros
+/// Provides macros for grouping errors and generating automatic
+/// conversions.
+// `StdError` is referenced from generated code in the macro body.
 #[allow(unused_imports)]
 use std::error::Error as StdError;
 
-/// Macro for composing multi-error enums with automatic `From<OtherError>` conversions.
+/// Macro for composing multi-error enums with automatic
+/// `From<OtherError>` conversions and full [`ForgeError`] delegation.
 ///
-/// This macro allows you to create a parent error type that can wrap multiple other error types,
-/// automatically implementing From conversions for each of them.
+/// Every variant must wrap exactly one source type that itself
+/// implements [`ForgeError`]. The macro generates:
+///
+/// - the enum declaration,
+/// - `Display` and `Error` implementations that forward to the
+///   wrapped source,
+/// - `From<T>` for each wrapped type,
+/// - a [`ForgeError`] impl whose methods delegate directly to the
+///   wrapped source's `ForgeError` methods (no type-erased
+///   downcast, no fallback values).
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
 /// use error_forge::{group, AppError};
-/// use std::io;
 ///
+/// // `AppError` already implements `ForgeError`, so it can be
+/// // wrapped directly. Other types you wrap with `group!` must
+/// // also implement `ForgeError` (use `define_errors!` or
+/// // `#[derive(ModError)]` to produce them).
 /// group! {
 ///     #[derive(Debug)]
 ///     pub enum ServiceError {
 ///         App(AppError),
-///         Io(io::Error),
 ///     }
 /// }
+///
+/// // `From<AppError>` is generated, so `?` works against any
+/// // function that returns an `AppError`.
+/// let _err: ServiceError = AppError::config("missing").into();
 /// ```
 ///
-/// # Known limitations (scheduled for `1.0`)
+/// # `ForgeError` requirement
 ///
-/// 1. **Macro-parse ambiguity.** The doctest above is marked
-///    `ignore` because the macro's internal `@with_impl` arm has
-///    two competing repetition blocks (`$variant` for wrapped
-///    types and `$variant_extra` for free-form variants) that the
-///    parser cannot disambiguate cleanly. `group!` works in
-///    practice as exercised by `tests/`, but a top-level doctest
-///    invocation trips the ambiguity. The macro will be rewritten
-///    with unambiguous tokens in `1.0`.
-/// 2. **Broken `ForgeError` delegation.** The generated
-///    `ForgeError` impl tries to delegate `kind` / `status_code` /
-///    `is_retryable` to the wrapped variant's own `ForgeError`
-///    impl, but the type-erased downcast pattern used internally
-///    does not work as intended. In practice every wrapped variant
-///    gets the fallback values (`stringify!($variant)` for `kind`,
-///    `500` for `status_code`, `false` for `is_retryable`). The
-///    `Display`, `Error::source()`, and `From<T>` parts work
-///    correctly. The delegation will be rewritten in `1.0` to
-///    require `: ForgeError` on each wrapped type and call its
-///    trait methods directly.
+/// Each wrapped source type must implement [`ForgeError`]. If you
+/// need to compose with a type that does not (e.g. `std::io::Error`),
+/// wrap it once in a `define_errors!` enum variant or
+/// `#[derive(ModError)]` enum and then group the result.
+///
+/// This is a **breaking change from `0.9.x`**, where `group!`
+/// accepted any wrapped type but the resulting `ForgeError` impl
+/// was silently incorrect — every method returned default
+/// fallback values regardless of the wrapped type. The `1.0`
+/// rewrite removes the type-erased downcast and trades it for a
+/// trait bound the compiler can verify.
+///
+/// [`ForgeError`]: crate::error::ForgeError
 #[macro_export]
 macro_rules! group {
-    // First pattern - simple wrapped errors without extra variants
     (
         $(#[$meta:meta])*
         $vis:vis enum $name:ident {
@@ -56,114 +65,49 @@ macro_rules! group {
             ),* $(,)?
         }
     ) => {
-        group!(@with_impl
-            $(#[$meta])* $vis enum $name {
-                $(
-                    $(#[$vmeta])*
-                    $variant($source_type),
-                )*
-            }
-            $(
-                $variant $source_type
-            )*
-        )
-    };
-
-    // Internal implementation with all necessary impls
-    (@with_impl
-        $(#[$meta:meta])* $vis:vis enum $name:ident {
-            $(
-                $(#[$vmeta:meta])*
-                $variant:ident($source_type:ty),
-            )*
-            $(
-                $(#[$vmeta_extra:meta])*
-                $variant_extra:ident $({$($field:ident: $field_type:ty),*})?,
-            )*
-        }
-        $($impl_variant:ident $impl_type:ty)*
-    ) => {
         $(#[$meta])*
         $vis enum $name {
             $(
                 $(#[$vmeta])*
                 $variant($source_type),
             )*
-            $(
-                $(#[$vmeta_extra])*
-                $variant_extra $({$($field: $field_type),*})?,
-            )*
         }
 
-        impl std::fmt::Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 match self {
                     $(
-                        Self::$variant(source) => write!(f, "{}", source),
+                        Self::$variant(source) => ::std::fmt::Display::fmt(source, f),
                     )*
+                }
+            }
+        }
+
+        impl ::std::error::Error for $name {
+            fn source(&self) -> ::std::option::Option<&(dyn ::std::error::Error + 'static)> {
+                match self {
                     $(
-                        Self::$variant_extra $({$($field),*})? => {
-                            let error_name = stringify!($variant_extra);
-                            write!(f, "{} error", error_name)
+                        Self::$variant(source) => {
+                            ::std::option::Option::Some(source as &(dyn ::std::error::Error + 'static))
                         }
                     )*
                 }
             }
         }
 
-        impl std::error::Error for $name {
-            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                match self {
-                    $(
-                        Self::$variant(source) => Some(source as &(dyn std::error::Error + 'static)),
-                    )*
-                    _ => None,
-                }
-            }
-        }
-
         $(
-            impl From<$source_type> for $name {
+            impl ::std::convert::From<$source_type> for $name {
                 fn from(source: $source_type) -> Self {
                     Self::$variant(source)
                 }
             }
         )*
 
-        // Implement ForgeError trait for our grouped error enum
         impl $crate::error::ForgeError for $name {
             fn kind(&self) -> &'static str {
                 match self {
                     $(
-                        Self::$variant(source) => {
-                            if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
-                            {
-                                return forge_err.kind();
-                            }
-                            stringify!($variant)
-                        },
-                    )*
-                    $(
-                        Self::$variant_extra $({$($field),*})? => stringify!($variant_extra),
-                    )*
-                }
-            }
-
-            fn user_message(&self) -> String {
-                match self {
-                    $(
-                        Self::$variant(source) => {
-                            if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
-                            {
-                                return forge_err.user_message();
-                            }
-                            source.to_string()
-                        },
-                    )*
-                    $(
-                        Self::$variant_extra $({$($field),*})? => self.to_string(),
+                        Self::$variant(source) => $crate::error::ForgeError::kind(source),
                     )*
                 }
             }
@@ -171,19 +115,7 @@ macro_rules! group {
             fn caption(&self) -> &'static str {
                 match self {
                     $(
-                        Self::$variant(source) => {
-                            if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
-                            {
-                                return forge_err.caption();
-                            }
-                            concat!(stringify!($variant), ": Error")
-                        },
-                    )*
-                    $(
-                        Self::$variant_extra $({$($field),*})? => {
-                            concat!(stringify!($variant_extra), ": Error")
-                        },
+                        Self::$variant(source) => $crate::error::ForgeError::caption(source),
                     )*
                 }
             }
@@ -191,48 +123,48 @@ macro_rules! group {
             fn is_retryable(&self) -> bool {
                 match self {
                     $(
-                        Self::$variant(source) => {
-                            if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
-                            {
-                                return forge_err.is_retryable();
-                            }
-                            false
-                        },
+                        Self::$variant(source) => $crate::error::ForgeError::is_retryable(source),
                     )*
-                    _ => false,
+                }
+            }
+
+            fn is_fatal(&self) -> bool {
+                match self {
+                    $(
+                        Self::$variant(source) => $crate::error::ForgeError::is_fatal(source),
+                    )*
                 }
             }
 
             fn status_code(&self) -> u16 {
                 match self {
                     $(
-                        Self::$variant(source) => {
-                            if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
-                            {
-                                return forge_err.status_code();
-                            }
-                            500
-                        },
+                        Self::$variant(source) => $crate::error::ForgeError::status_code(source),
                     )*
-                    _ => 500,
                 }
             }
 
             fn exit_code(&self) -> i32 {
                 match self {
                     $(
-                        Self::$variant(source) => {
-                            if let Some(forge_err) = (source as &dyn std::any::Any)
-                                .downcast_ref::<&(dyn $crate::error::ForgeError)>()
-                            {
-                                return forge_err.exit_code();
-                            }
-                            1
-                        },
+                        Self::$variant(source) => $crate::error::ForgeError::exit_code(source),
                     )*
-                    _ => 1,
+                }
+            }
+
+            fn user_message(&self) -> ::std::string::String {
+                match self {
+                    $(
+                        Self::$variant(source) => $crate::error::ForgeError::user_message(source),
+                    )*
+                }
+            }
+
+            fn dev_message(&self) -> ::std::string::String {
+                match self {
+                    $(
+                        Self::$variant(source) => $crate::error::ForgeError::dev_message(source),
+                    )*
                 }
             }
         }

@@ -1,8 +1,16 @@
 use crate::error::ForgeError;
 use std::fmt;
 
-/// A wrapper error type that attaches contextual information to an error
+/// A wrapper error type that attaches contextual information to
+/// an error.
+///
+/// Marked `#[non_exhaustive]` so future minor releases can add new
+/// fields without breaking callers. External code must not
+/// construct `ContextError` via struct-literal syntax; use
+/// [`ContextError::new`] or [`ResultExt::context`] /
+/// [`ResultExt::with_context`].
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct ContextError<E, C> {
     /// The original error
     pub error: E,

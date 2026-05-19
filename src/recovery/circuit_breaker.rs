@@ -1,9 +1,15 @@
 use crate::recovery::RecoveryResult;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Represents the current state of a circuit breaker
+/// Represents the current state of a circuit breaker.
+///
+/// Marked `#[non_exhaustive]` so future minor releases can add new
+/// states (e.g. `Disabled`, `ForcedOpen`) without breaking callers
+/// that exhaustively `match` on the enum.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum CircuitState {
     /// Circuit is closed and operations are allowed to execute
     Closed,
@@ -15,8 +21,14 @@ pub enum CircuitState {
     HalfOpen,
 }
 
-/// Configuration for a circuit breaker
+/// Configuration for a circuit breaker.
+///
+/// Marked `#[non_exhaustive]` so future minor releases can add new
+/// tuning knobs without breaking callers. Construct via
+/// [`CircuitBreakerConfig::default`] then mutate the fields you
+/// care about.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct CircuitBreakerConfig {
     /// Number of failures required to open the circuit
     pub failure_threshold: usize,
@@ -35,6 +47,44 @@ impl Default for CircuitBreakerConfig {
             failure_window_ms: 60000, // 1 minute
             reset_timeout_ms: 30000,  // 30 seconds
         }
+    }
+}
+
+impl CircuitBreakerConfig {
+    /// Construct a [`CircuitBreakerConfig`] from its three core knobs.
+    ///
+    /// Provided so external callers (tests, custom circuit-breaker
+    /// wiring) can build the struct without depending on its field
+    /// list, which may grow over the `1.x` line. For tuning only a
+    /// subset, start from [`Self::default`] and use the
+    /// `with_*` builder methods.
+    pub fn new(failure_threshold: usize, failure_window_ms: u64, reset_timeout_ms: u64) -> Self {
+        Self {
+            failure_threshold,
+            failure_window_ms,
+            reset_timeout_ms,
+        }
+    }
+
+    /// Override the failure-count threshold.
+    #[must_use]
+    pub fn with_failure_threshold(mut self, threshold: usize) -> Self {
+        self.failure_threshold = threshold;
+        self
+    }
+
+    /// Override the failure-counting window in milliseconds.
+    #[must_use]
+    pub fn with_failure_window_ms(mut self, window_ms: u64) -> Self {
+        self.failure_window_ms = window_ms;
+        self
+    }
+
+    /// Override the reset-timeout in milliseconds.
+    #[must_use]
+    pub fn with_reset_timeout_ms(mut self, reset_ms: u64) -> Self {
+        self.reset_timeout_ms = reset_ms;
+        self
     }
 }
 
@@ -75,7 +125,7 @@ impl CircuitBreaker {
 
     /// Get the current state of the circuit breaker
     pub fn state(&self) -> CircuitState {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.state
     }
 
@@ -92,7 +142,7 @@ impl CircuitBreaker {
     {
         // First check if we can proceed with the call
         let can_proceed = {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock();
             self.update_state(&mut inner);
             inner.state != CircuitState::Open
         };
@@ -119,7 +169,7 @@ impl CircuitBreaker {
 
     /// Manually reset the circuit breaker to closed state
     pub fn reset(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         inner.state = CircuitState::Closed;
         inner.failures.clear();
         inner.last_state_change = Instant::now();
@@ -127,7 +177,7 @@ impl CircuitBreaker {
 
     /// Called when an operation succeeds
     fn on_success(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         if inner.state == CircuitState::HalfOpen {
             // Successful test request, close the circuit
             inner.state = CircuitState::Closed;
@@ -138,7 +188,7 @@ impl CircuitBreaker {
 
     /// Called when an operation fails
     fn on_failure(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
 
         if inner.state == CircuitState::HalfOpen {
             // Failed during test request, reopen the circuit

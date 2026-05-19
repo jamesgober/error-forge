@@ -1,6 +1,16 @@
 [package]
 name = "error-forge"
-version = "0.9.8"
+# 1.0.0 (2026-05-18) — stable API. Public surface frozen under
+# SemVer for the entire 1.x line. See docs/STABILITY.md for the
+# binding contract and docs/API-FREEZE-AUDIT.md for the surface
+# manifest. Major changes vs 0.9.x: `group!` macro rewritten
+# (requires `: ForgeError` on wrapped types), `CircuitBreaker`
+# switched to `parking_lot::Mutex` (no poisoning), hook callback
+# widened to `Box<dyn Fn>`, `#[non_exhaustive]` on several
+# public types, `Result<T>` deprecated in favour of `AppResult<T>`,
+# `register_error_hook` (non-try) deprecated, `rand` gated behind
+# new `jitter` feature.
+version = "1.0.0"
 edition = "2021"
 # MSRV. The crate uses `io::Error::other` (stabilised 1.74),
 # `Mutex::new()` in const context (1.63 — fine), and Cargo lockfile
@@ -56,12 +66,23 @@ thiserror = "1.0"
 # behaviour, with the same `[<...>]` token-pasting and case-modifier
 # syntax `define_errors!` relies on.
 pastey = "0.2"
-error-forge-derive = {version = "0.9.8", path = "./error-forge-derive", optional = true }
+# `parking_lot` provides a non-poisoning `Mutex` used by
+# `CircuitBreaker`'s internal state. The standard `std::sync::Mutex`
+# poisons on panic, which is incompatible with this crate's
+# error-handling premise; `parking_lot::Mutex` returns the guard
+# directly with no `Result` to unwrap.
+parking_lot = "0.12"
+error-forge-derive = {version = "1.0.0", path = "./error-forge-derive", optional = true }
 serde = { version = "1.0", optional = true, features = ["derive"] }
 log = { version = "0.4", optional = true }
 tracing = { version = "0.1", optional = true }
 async-trait = { version = "0.1.74", optional = true }
-rand = "0.8.5"
+# `rand` is only used to add ±20% jitter to `ExponentialBackoff` when
+# the caller opts in. Gated behind the `jitter` feature so users who
+# never call `ExponentialBackoff::with_jitter(true)` don't pay for
+# `rand`'s transitive deps (`getrandom`, `rand_core`, `rand_chacha`,
+# `ppv-lite86`).
+rand = { version = "0.8.5", optional = true }
 
 [features]
 default = []
@@ -69,6 +90,10 @@ derive = ["error-forge-derive"]
 serde = ["dep:serde"]
 console = []
 backtrace = []
+# Enables ±20% jitter in `recovery::ExponentialBackoff::with_jitter`.
+# Pulls in `rand` for non-cryptographic random delays. Off by
+# default — backoff still works without it, jitter is a no-op.
+jitter = ["dep:rand"]
 log = ["dep:log"]
 tracing = ["dep:tracing"]
 registry = []

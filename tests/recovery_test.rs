@@ -74,14 +74,8 @@ impl StdError for TestError {}
 
 #[test]
 fn test_circuit_breaker() {
-    let circuit = CircuitBreaker::with_config(
-        "test-circuit",
-        CircuitBreakerConfig {
-            failure_threshold: 2,
-            failure_window_ms: 1000,
-            reset_timeout_ms: 100,
-        },
-    );
+    let circuit =
+        CircuitBreaker::with_config("test-circuit", CircuitBreakerConfig::new(2, 1000, 100));
 
     // Initially closed
     assert_eq!(circuit.state(), CircuitState::Closed);

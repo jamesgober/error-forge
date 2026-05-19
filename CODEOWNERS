@@ -1,0 +1,10 @@
+# CODEOWNERS for error-forge
+#
+# This file lists the maintainer(s) responsible for code review and
+# release decisions across the repository. GitHub uses it to suggest
+# reviewers automatically on every pull request.
+#
+# Syntax: <path pattern>   <username>...
+
+# Default — everything that does not match a more specific rule.
+*    @jamesgober

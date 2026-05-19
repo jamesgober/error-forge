@@ -29,10 +29,10 @@ It ships with a built-in `AppError`, a declarative `define_errors!` macro, an op
 
 ```toml
 [dependencies]
-error-forge = "0.9.8"
+error-forge = "1.0"
 ```
 
-MSRV: Rust `1.81`. CI verifies the crate builds on the exact `1.81.0` toolchain. (The crate uses `io::Error::other` (1.74) and the committed `Cargo.lock` is format v4, which requires `1.78+` to parse; `1.81` is the conservative floor.)
+MSRV: Rust `1.81`. CI verifies the crate builds on the exact `1.81.0` toolchain.
 
 Common optional features:
 
@@ -41,6 +41,7 @@ Common optional features:
 - `serde`: enables serialization support where compatible
 - `log`: enables the `log` adapter
 - `tracing`: enables the `tracing` adapter
+- `jitter`: enables ±20% jitter in `ExponentialBackoff` (pulls in `rand`)
 
 ## Quick Start
 
@@ -262,17 +263,29 @@ fn main() {
 
 ## Quality Bar
 
-The crate is validated with:
+Every push runs the following on a Linux + macOS + Windows matrix
+across nine feature combinations, plus dedicated MSRV (`1.81.0`)
+and `cargo audit` jobs:
 
-- `cargo test --all-features`
-- `cargo clippy --all-targets --all-features -- -D warnings`
-- targeted examples and feature-gated regression coverage
+- `cargo build --workspace --all-features`
+- `cargo test --workspace` per feature combination
+- `cargo clippy --workspace --all-features -- -D warnings`
+- `cargo clippy --workspace --no-default-features -- -D warnings`
+- `cargo doc --workspace --all-features --no-deps` under
+  `RUSTDOCFLAGS="-D warnings"`
+- `cargo +1.81 build --workspace --all-features` (MSRV)
+- `cargo audit` against the RustSec advisory database
 
 ## Documentation
 
-- API reference: `docs/API.md`
-- Examples: `examples/`
-- Crate documentation: https://docs.rs/error-forge
+- [API reference](docs/API.md) — narrative walkthroughs.
+- [API-FREEZE-AUDIT](docs/API-FREEZE-AUDIT.md) — canonical manifest of every public symbol in `1.0.0`.
+- [STABILITY](docs/STABILITY.md) — binding SemVer / panic-safety / MSRV / deprecation policy.
+- [COMPARISON](docs/COMPARISON.md) — side-by-side with `anyhow`, `thiserror`, `miette`, `snafu`, `eyre`.
+- [Architecture](docs/architecture.md) — design rationale.
+- [Migration](docs/migration.md) — upgrade guides (`0.9.x → 1.0.0`, etc.).
+- [Examples](examples/) — runnable code.
+- [docs.rs](https://docs.rs/error-forge) — generated docs.
 
 ## License
 

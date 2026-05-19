@@ -69,11 +69,12 @@ checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
 name = "error-forge"
-version = "0.9.8"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "error-forge-derive",
  "log",
+ "parking_lot",
  "pastey",
  "rand",
  "serde",
@@ -85,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "error-forge-derive"
-version = "0.9.8"
+version = "1.0.0"
 dependencies = [
  "proc-macro2",
  "quote",

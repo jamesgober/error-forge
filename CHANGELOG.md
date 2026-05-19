@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-18
+
+Stable API. The public surface is locked under SemVer for the entire `1.x` line — see [`docs/STABILITY.md`](docs/STABILITY.md) for the binding policy and [`docs/API-FREEZE-AUDIT.md`](docs/API-FREEZE-AUDIT.md) for the surface manifest. Three breaking corrections at the freeze boundary (`group!` macro, `parking_lot::Mutex` in `CircuitBreaker`, `AsyncForgeError::async_handle` default), several deprecations, `#[non_exhaustive]` annotations on public types likely to grow, and a substantial documentation expansion. See the full release notes in [`.dev/release/v1.0.0.md`](.dev/release/v1.0.0.md).
+
+### Added
+
+- **`docs/STABILITY.md`** — formal SemVer / panic-safety / determinism / deprecation / dependency / MSRV policy for the `1.x` line.
+- **`docs/API-FREEZE-AUDIT.md`** — manifest of every public symbol in `1.0.0`, what trait impls it carries, what is `pub(crate)`, what is intentionally out of scope.
+- **`docs/COMPARISON.md`** — honest side-by-side with `anyhow`, `thiserror`, `miette`, `snafu`, `eyre` including non-strengths.
+- **`docs/architecture.md`** — design rationale (why `ForgeError` trait, why sync recovery, why `parking_lot`, etc.).
+- **`docs/migration.md`** — upgrade guide from `0.9.x → 1.0.0` (and historical `0.6.x → 0.9.x → 1.0.0` summary).
+- **`SECURITY.md`** — vulnerability disclosure policy with the `me@jamesgober.com` private reporting channel and triage timeline.
+- **`CONTRIBUTING.md`** — contributor workflow, CI gates, code style, banned terms.
+- **`RELEASING.md`** — codified release procedure with the derive-first publish order documented.
+- **`CODEOWNERS`** — single-maintainer default.
+- **`.dev/DIRECTIVES.md`** and **`.dev/ROADMAP.md`** — internal workflow rules and outstanding-work tracker (git-ignored).
+- **`.github/dependabot.yml`** — weekly grouped updates for `cargo` and `github-actions` ecosystems with the `dtolnay/rust-toolchain` tag-format workaround.
+- **`.github/PULL_REQUEST_TEMPLATE.md`** + `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md`.
+- **`deny.toml`** — license allow-list, wildcard ban, `crates.io`-only sources.
+- **`cargo deny` CI job** alongside `cargo audit`.
+- **`new()` constructors on `ErrorContext` and `CircuitBreakerConfig`** so external callers (tests, custom wiring) can build these `#[non_exhaustive]` types without depending on the field list.
+- **`CircuitBreakerConfig::with_failure_threshold` / `with_failure_window_ms` / `with_reset_timeout_ms`** builder methods for partial overrides.
+- **`AppResult<T>`** — new type alias for `Result<T, AppError>` that does not shadow `std::result::Result` in glob imports.
+
+### Changed
+
+- **Breaking — `group!` macro rewritten.** The internal `@with_impl` arm had a macro-parse ambiguity in `0.9.x` that prevented top-level invocations of the documented form (covered by `ignore`d doctest in `0.9.x`). The rewrite eliminates the second repetition block entirely, and the generated `ForgeError` impl now delegates directly to each wrapped type's `ForgeError` methods instead of the silently-broken type-erased downcast pattern. **Every wrapped variant must now implement `ForgeError`** — wrap foreign types in `define_errors!` or `#[derive(ModError)]` enums first. Doctest is no longer `ignore`d and the parse-ambiguity is gone.
+- **Breaking — `CircuitBreaker` now uses `parking_lot::Mutex` instead of `std::sync::Mutex`**. Removes the lock-poisoning hazard that `0.9.x` shipped — a panic inside an `execute(|| ...)` closure no longer poisons the breaker for the rest of the process. Adds `parking_lot` to the runtime deps (always-on).
+- **Breaking — `AsyncForgeError::async_handle` gains a default no-op body.** Was a required method in `0.9.x` with a stub `Ok(())` impl on `AppError`; the stub is removed. Implementors override `async_handle` only if they want async behaviour.
+- **Breaking — `AppError::with_async_context` removed.** The method took a `FnOnce()` and synchronously called it; nothing async about it. Use `ResultExt::with_context` or build `ContextError` directly.
+- **Breaking — `#[non_exhaustive]` added to `ErrorLevel`, `ErrorContext`, `ErrorCodeInfo`, `CodedError`, `ContextError`, `CircuitBreakerConfig`, `CircuitState`.** External code can no longer struct-literal-construct these types, and exhaustive `match` statements need a wildcard arm. Migration guide in [`docs/migration.md`](docs/migration.md).
+- **Breaking — `CodedError::new` no longer auto-registers the code** in the global registry. Pre-register codes at startup with `register_error_code` if you want documentation URLs or per-code retryability. Hot-path cost on `with_code(...)` is now one allocation and zero locking.
+- **Breaking — hook callback widened to `Box<dyn Fn(ErrorContext<'_>) + Send + Sync + 'static>`.** Was a bare function pointer `fn(ErrorContext)` in `0.9.x`; the new shape accepts closures capturing thread-safe state.
+- **Breaking — `pub use crate::macros::*;` narrowed.** The wildcard re-exported `ErrorContext`, `ErrorLevel`, `ErrorSource`, `register_error_hook`, `try_register_error_hook`, `call_error_hook`. `1.0` lists the first five explicitly and drops `call_error_hook` from the prelude path (still reachable via `error_forge::macros::call_error_hook`).
+- **Performance — `CodedError::new` no longer takes a registry lock** (see Breaking note above).
+
+### Deprecated
+
+- **`error_forge::macros::register_error_hook`** (non-`try` variant). Silently discards the registration failure when a hook is already installed. Use `try_register_error_hook` instead, which returns `Err("Error hook already registered")` so callers can decide how to react.
+- **`error_forge::Result<T>`** type alias. Shadows `std::result::Result` in `use error_forge::*` glob imports — a quiet footgun in caller code. Use `error_forge::AppResult<T>` instead.
+
+Both deprecations stay callable through the entire `1.x` line; they are removed only in `2.0`.
+
+### Compatibility
+
+- MSRV stays at Rust `1.81`. No bump.
+- The default feature set is `[]` (every optional feature is opt-in). Unchanged.
+- New optional `jitter` feature gates the `rand` runtime dep that previously was always-on. Existing users who do not call `ExponentialBackoff::with_jitter(true)` save the `rand` transitive deps; users who do, add `features = ["jitter"]` to their `Cargo.toml`.
+
 ## [0.9.8] - 2026-05-18
 
 Cleanup release. Drops the deprecated `atty` dependency, prunes a dead feature flag, tightens `ConsoleTheme` allocations, resolves three of the four ignored doctests, and rewrites the `Cargo.toml` description without banned terms. No public API changes. Sets `rust-version` in `Cargo.toml` for the first time and ships the corresponding MSRV-verification CI job.
@@ -129,7 +178,8 @@ Initial public release with core functionality.
 - Error hook system with severity levels
 - Zero external dependencies design
 
-[Unreleased]: https://github.com/jamesgober/error-forge/compare/v0.9.8...HEAD
+[Unreleased]: https://github.com/jamesgober/error-forge/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/jamesgober/error-forge/compare/v0.9.8...v1.0.0
 [0.9.8]: https://github.com/jamesgober/error-forge/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/jamesgober/error-forge/compare/0.9.6...v0.9.7
 [0.9.6]: https://github.com/jamesgober/error-forge/compare/0.9.0...v0.9.6

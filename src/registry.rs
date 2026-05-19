@@ -10,8 +10,12 @@ pub struct ErrorRegistry {
     codes: RwLock<HashMap<String, ErrorCodeInfo>>,
 }
 
-/// Metadata for a registered error code
+/// Metadata for a registered error code.
+///
+/// Marked `#[non_exhaustive]` so future minor releases can add new
+/// fields (e.g. severity, tags, owner) without breaking callers.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ErrorCodeInfo {
     /// The error code (e.g. "AUTH-001")
     pub code: String,
@@ -84,8 +88,15 @@ impl ErrorRegistry {
     }
 }
 
-/// An error with an associated error code
+/// An error with an associated error code.
+///
+/// Marked `#[non_exhaustive]` so future minor releases can add new
+/// fields without breaking callers. External code must not
+/// construct `CodedError` via struct-literal syntax; use
+/// [`CodedError::new`] or the [`WithErrorCode::with_code`]
+/// extension method.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct CodedError<E> {
     /// The original error
     pub error: E,
@@ -100,23 +111,28 @@ pub struct CodedError<E> {
 }
 
 impl<E> CodedError<E> {
-    /// Create a new coded error
+    /// Wrap an error with a stable code.
+    ///
+    /// The code is **not** auto-registered in the global registry.
+    /// Pre-register the code at startup with
+    /// [`register_error_code`] if you want documentation URLs,
+    /// per-code descriptions, or retryability metadata to flow
+    /// through [`CodedError::code_info`] / [`CodedError::is_retryable`].
+    ///
+    /// # Behaviour change since `1.0.0`
+    ///
+    /// Prior `0.9.x` releases auto-registered the code from inside
+    /// `CodedError::new`, which took a write lock on the global
+    /// registry on the first occurrence of every new code per
+    /// process. That lazy-registration step is gone in `1.0` — the
+    /// hot path is now a single allocation (the `String` from
+    /// `code.into()`) and zero locking. Code metadata that was
+    /// pre-registered via [`register_error_code`] continues to be
+    /// consulted via [`CodedError::code_info`] / `is_retryable`.
     pub fn new(error: E, code: impl Into<String>) -> Self {
-        let code = code.into();
-
-        // Register the code if it's not already registered
-        if !ErrorRegistry::global().is_registered(&code) {
-            let _ = register_error_code(
-                code.clone(),
-                format!("Error code {code}"),
-                None as Option<String>,
-                false,
-            );
-        }
-
         Self {
             error,
-            code,
+            code: code.into(),
             retryable: None,
             fatal: false,
             status: None,

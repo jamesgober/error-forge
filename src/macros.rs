@@ -1,5 +1,10 @@
-/// Error hook types for centralized error handling
+/// Error severity level passed to a registered hook callback.
+///
+/// Marked `#[non_exhaustive]` so future minor releases can add new
+/// severity variants (e.g. `Notice`, `Trace`) without breaking
+/// existing `match` statements.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum ErrorLevel {
     /// Debug-level errors (for detailed debugging)
     Debug,
@@ -13,7 +18,13 @@ pub enum ErrorLevel {
     Critical,
 }
 
-/// Error context passed to registered hooks
+/// Error context passed to registered hooks.
+///
+/// Marked `#[non_exhaustive]` so future minor releases can add new
+/// fields without breaking callers that destructure the struct.
+/// Construct via [`ErrorContext::new`] (rather than struct-literal
+/// syntax) from outside the crate.
+#[non_exhaustive]
 pub struct ErrorContext<'a> {
     /// The error caption
     pub caption: &'a str,
@@ -27,10 +38,41 @@ pub struct ErrorContext<'a> {
     pub is_retryable: bool,
 }
 
+impl<'a> ErrorContext<'a> {
+    /// Construct an [`ErrorContext`] from its components.
+    ///
+    /// Provided so external callers (tests, custom hook wiring) can
+    /// build the struct without depending on its field list, which
+    /// may grow over the `1.x` line.
+    pub fn new(
+        caption: &'a str,
+        kind: &'a str,
+        level: ErrorLevel,
+        is_fatal: bool,
+        is_retryable: bool,
+    ) -> Self {
+        Self {
+            caption,
+            kind,
+            level,
+            is_fatal,
+            is_retryable,
+        }
+    }
+}
+
 use std::sync::OnceLock;
 
-/// Global error hook for centralized error handling
-static ERROR_HOOK: OnceLock<fn(ErrorContext)> = OnceLock::new();
+/// Hook callback type.
+///
+/// Stored as a boxed `Fn` so callers can capture environment in a
+/// closure (a `Write`-implementing buffer, a thread-safe logger
+/// handle, an `Arc<Config>`, etc.). The `Send + Sync` bounds let
+/// the hook fire from any thread.
+type ErrorHookFn = Box<dyn Fn(ErrorContext<'_>) + Send + Sync + 'static>;
+
+/// Global error hook for centralized error handling.
+static ERROR_HOOK: OnceLock<ErrorHookFn> = OnceLock::new();
 
 #[doc(hidden)]
 pub trait ErrorSource {
@@ -76,40 +118,73 @@ impl ErrorSource for Option<Box<dyn std::error::Error>> {
     }
 }
 
-/// Register a callback function to be called when errors are created
+/// Register a callback to be called when errors are created.
+///
+/// **Deprecated since `1.0.0`.** This variant silently discards
+/// the registration failure when a hook is already installed.
+/// Use [`try_register_error_hook`] instead — it returns the
+/// failure explicitly so callers can decide how to handle the
+/// double-registration case.
 ///
 /// # Example
 ///
-/// ```rust
-/// use error_forge::{AppError, macros::{register_error_hook, ErrorLevel, ErrorContext}};
+/// ```
+/// use error_forge::macros::{try_register_error_hook, ErrorLevel};
 ///
-/// // Setup logging with different levels
-/// register_error_hook(|ctx| {
+/// let _ = try_register_error_hook(|ctx| {
 ///     match ctx.level {
 ///         ErrorLevel::Debug => println!("DEBUG: {} ({})", ctx.caption, ctx.kind),
 ///         ErrorLevel::Info => println!("INFO: {} ({})", ctx.caption, ctx.kind),
 ///         ErrorLevel::Warning => println!("WARNING: {} ({})", ctx.caption, ctx.kind),
 ///         ErrorLevel::Error => println!("ERROR: {} ({})", ctx.caption, ctx.kind),
 ///         ErrorLevel::Critical => println!("CRITICAL: {} ({})", ctx.caption, ctx.kind),
-///     }
-///     
-///     // Optional: send notifications for critical errors
-///     if ctx.level == ErrorLevel::Critical || ctx.is_fatal {
-///         // send_notification("Critical error occurred", ctx.caption);
+///         // `ErrorLevel` is `#[non_exhaustive]` — minor releases
+///         // may add new severity levels.
+///         _ => println!("OTHER: {} ({})", ctx.caption, ctx.kind),
 ///     }
 /// });
 /// ```
-///
-pub fn register_error_hook(callback: fn(ErrorContext)) {
+#[deprecated(
+    since = "1.0.0",
+    note = "register_error_hook silently drops registration failures; use \
+            try_register_error_hook instead"
+)]
+pub fn register_error_hook<F>(callback: F)
+where
+    F: Fn(ErrorContext<'_>) + Send + Sync + 'static,
+{
     let _ = try_register_error_hook(callback);
 }
 
-/// Attempt to register a callback function to be called when errors are created.
+/// Attempt to register a callback to be called when errors are
+/// created.
 ///
-/// Returns an error if a hook is already registered.
-pub fn try_register_error_hook(callback: fn(ErrorContext)) -> Result<(), &'static str> {
+/// The callback may be a function pointer or a closure capturing
+/// thread-safe state. Only one hook can be registered per process;
+/// subsequent calls return `Err("Error hook already registered")`.
+///
+/// # Example
+///
+/// ```
+/// use error_forge::macros::try_register_error_hook;
+/// use std::sync::{Arc, Mutex};
+///
+/// // Closures that capture state work too — not just function pointers.
+/// let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+/// let log_for_hook = Arc::clone(&log);
+/// let _ = try_register_error_hook(move |ctx| {
+///     log_for_hook
+///         .lock()
+///         .unwrap()
+///         .push(format!("{}: {}", ctx.kind, ctx.caption));
+/// });
+/// ```
+pub fn try_register_error_hook<F>(callback: F) -> Result<(), &'static str>
+where
+    F: Fn(ErrorContext<'_>) + Send + Sync + 'static,
+{
     ERROR_HOOK
-        .set(callback)
+        .set(Box::new(callback))
         .map_err(|_| "Error hook already registered")
 }
 

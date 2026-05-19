@@ -1,3 +1,4 @@
+#[cfg(feature = "jitter")]
 use rand::Rng;
 use std::cmp::min;
 use std::time::Duration;
@@ -61,7 +62,11 @@ impl ExponentialBackoff {
         self
     }
 
-    /// Enable or disable jitter
+    /// Enable or disable ±20% jitter on each calculated delay.
+    ///
+    /// Jitter requires the `jitter` cargo feature; without it the
+    /// flag is silently ignored and every delay is the
+    /// non-jittered exponential value. Off by default.
     pub fn with_jitter(mut self, jitter: bool) -> Self {
         self.jitter = jitter;
         self
@@ -79,15 +84,19 @@ impl Backoff for ExponentialBackoff {
         let calculated_delay = (self.initial_delay_ms as f64 * exp_factor) as u64;
         let capped_delay = min(calculated_delay, self.max_delay_ms);
 
+        // Jitter is only applied when both the `jitter` cargo feature
+        // is enabled AND the caller flipped `self.jitter = true`. With
+        // the feature off, jitter is a documented no-op so users who
+        // never want jitter avoid pulling in `rand`.
+        #[cfg(feature = "jitter")]
         if self.jitter {
-            // Apply jitter (±20%)
             let mut rng = rand::thread_rng();
             let jitter_factor = rng.gen_range(0.8..1.2);
             let jittered_delay = (capped_delay as f64 * jitter_factor) as u64;
-            Duration::from_millis(jittered_delay)
-        } else {
-            Duration::from_millis(capped_delay)
+            return Duration::from_millis(jittered_delay);
         }
+
+        Duration::from_millis(capped_delay)
     }
 
     fn box_clone(&self) -> Box<dyn Backoff> {

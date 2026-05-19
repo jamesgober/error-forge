@@ -60,7 +60,13 @@ pub mod async_error_impl;
 
 // Re-export core types and traits
 pub use crate::console_theme::{install_panic_hook, print_error, ConsoleTheme};
-pub use crate::error::{AppError, ForgeError, Result};
+pub use crate::error::{AppError, AppResult, ForgeError};
+
+// Historical re-export. `Result` shadows `std::result::Result` in
+// glob imports; deprecated in favour of `AppResult`. Kept for
+// source compatibility through the `1.x` line.
+#[allow(deprecated)]
+pub use crate::error::Result;
 
 // Re-export context module
 pub use crate::context::{ContextError, ResultExt};
@@ -80,9 +86,14 @@ pub use crate::logging::{log_error, logger, register_logger, ErrorLogger};
 #[cfg(feature = "async")]
 pub use crate::async_error::{AsyncForgeError, AsyncResult};
 
-// Re-export macros for convenient use
-#[allow(unused_imports)]
-pub use crate::macros::*;
+// Re-export hook types from `macros` — explicitly named so the
+// public surface stays under our control. `define_errors!` and
+// `group!` are re-exported automatically because they are
+// `#[macro_export]`'d.
+#[allow(deprecated)]
+pub use crate::macros::{
+    register_error_hook, try_register_error_hook, ErrorContext, ErrorLevel, ErrorSource,
+};
 
 // Optional re-export of the proc macro
 #[cfg(feature = "derive")]

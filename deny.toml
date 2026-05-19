@@ -1,0 +1,54 @@
+# `cargo deny` policy.
+#
+# Run via `cargo deny check` (or wired into CI as a separate job).
+# Catches:
+#   - license violations (use the allow-list below)
+#   - duplicate versions of the same crate (warn)
+#   - wildcard version requirements in our `Cargo.toml`
+#   - sources outside `crates.io`
+#   - banned or deprecated crates per the advisories database
+
+[graph]
+all-features = true
+
+[licenses]
+# Permissive licences we accept. If a transitive dep ships under a
+# licence not on this list, `cargo deny check` fails.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "0BSD",
+]
+# Confidence threshold for license-text matching (0.0–1.0).
+confidence-threshold = 0.85
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Crates banned outright go here. None today.
+deny = []
+
+[advisories]
+# Run `cargo audit`-style advisory checks. The `audit` CI job is
+# our primary surface for these; this block exists for the
+# `cargo deny check advisories` invocation.
+yanked = "deny"
+# Informational warnings (unmaintained, notice) are surfaced; we
+# do not auto-fail on them, but a release-readiness review must
+# clear them before tagging.
+
+[sources]
+# Only `crates.io` is acceptable. Git deps and local-path deps in
+# `[dependencies]` would fail this check.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -1,5 +1,17 @@
 ## API Reference
 
+This document is the **narrative** API reference — guided walkthroughs
+of the most common surfaces. For the **canonical** manifest of every
+public symbol in `1.0.0` (locked under SemVer for the `1.x` line), see
+[`API-FREEZE-AUDIT.md`](API-FREEZE-AUDIT.md).
+
+Other companions:
+
+- [`STABILITY.md`](STABILITY.md) — binding SemVer / panic-safety / MSRV / deprecation policy.
+- [`COMPARISON.md`](COMPARISON.md) — side-by-side with `anyhow`, `thiserror`, `miette`, `snafu`, `eyre`.
+- [`architecture.md`](architecture.md) — design rationale for the trait, hook system, recovery primitives.
+- [`migration.md`](migration.md) — upgrade guides from earlier versions.
+
 This document tracks the public surface that is available today. It intentionally favors accuracy over aspiration.
 
 ## Feature Flags

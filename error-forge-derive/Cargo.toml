@@ -1,6 +1,6 @@
 [package]
 name = "error-forge-derive"
-version = "0.9.8"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.81"
 description = "Derive macros for the error-forge crate"

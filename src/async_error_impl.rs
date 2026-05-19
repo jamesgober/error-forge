@@ -5,7 +5,24 @@ use std::error::Error as StdError;
 use crate::async_error::AsyncForgeError;
 use crate::error::AppError;
 
-/// Provides async implementations for the AppError type.
+/// `AppError` participates in the `AsyncForgeError` surface so it can
+/// be used wherever async-aware error metadata is required.
+///
+/// All sync metadata methods (`kind`, `caption`, `is_retryable`,
+/// `is_fatal`, `status_code`, `exit_code`, `user_message`,
+/// `dev_message`) delegate to the existing
+/// [`ForgeError`](crate::error::ForgeError) implementation. The
+/// async [`async_handle`](AsyncForgeError::async_handle) method uses
+/// the trait's default no-op implementation — `AppError` has no
+/// default async behaviour beyond carrying its metadata.
+///
+/// # Breaking change from `0.9.x`
+///
+/// `0.9.x` shipped a stub `async_handle` implementation here that
+/// returned `Ok(())` regardless of input but matched on `AppError`
+/// variants as if it were doing something. The stub is removed in
+/// `1.0`; the trait now provides a no-op default and `AppError`
+/// inherits it.
 #[cfg(feature = "async")]
 #[async_trait]
 impl AsyncForgeError for AppError {
@@ -41,24 +58,19 @@ impl AsyncForgeError for AppError {
         <Self as crate::error::ForgeError>::dev_message(self)
     }
 
-    async fn async_handle(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
-        // Default async handling for AppError
-        match self {
-            AppError::Network { .. } => {
-                // In a real implementation, this might attempt reconnection or other async recovery
-                Ok(())
-            }
-            _ => {
-                // For other error types, default to regular error handling
-                Ok(())
-            }
-        }
-    }
+    // `async_handle` uses the trait default (no-op `Ok(())`).
 }
 
 #[cfg(feature = "async")]
 impl AppError {
-    /// Create a new error from an async operation result
+    /// Convert an `async` operation's `Result<T, E>` (where `E:
+    /// std::error::Error + Send + Sync + 'static`) into a
+    /// `Result<T, AppError>` by wrapping the error in
+    /// `AppError::other(...)`, marked retryable and non-fatal.
+    ///
+    /// Convenience for the common `async fn -> Result<T, AppError>`
+    /// pattern where the caller wants to flatten any
+    /// `std::error::Error` into an `AppError` shape.
     pub async fn from_async_result<T, E>(result: Result<T, E>) -> Result<T, Self>
     where
         E: StdError + Send + Sync + 'static,
@@ -71,16 +83,14 @@ impl AppError {
         }
     }
 
-    /// Handle this error asynchronously using the AsyncForgeError trait
+    /// Run the async hook on this error.
+    ///
+    /// Equivalent to calling
+    /// `<AppError as AsyncForgeError>::async_handle(&self).await`;
+    /// `AppError` does not override the trait default, so this is a
+    /// no-op `Ok(())`. Exists for symmetry with the other
+    /// `*_async` builders on `AppError`.
     pub async fn handle_async(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
         <Self as AsyncForgeError>::async_handle(self).await
-    }
-
-    /// Wrap this error with async context
-    pub fn with_async_context<C: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static>(
-        self,
-        context_generator: impl FnOnce() -> C + Send + 'static,
-    ) -> crate::context::ContextError<Self, C> {
-        crate::context::ContextError::new(self, context_generator())
     }
 }

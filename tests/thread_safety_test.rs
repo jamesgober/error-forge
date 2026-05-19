@@ -22,17 +22,18 @@ fn test_error_hook_thread_safety() {
     for i in 0..8 {
         let msg = format!("Test error {}", i);
         let err = AppError::config(msg);
-        test_hook(ErrorContext {
-            caption: err.caption(),
-            kind: err.kind(),
-            level: if err.is_fatal() {
-                error_forge::macros::ErrorLevel::Critical
-            } else {
-                error_forge::macros::ErrorLevel::Error
-            },
-            is_fatal: err.is_fatal(),
-            is_retryable: err.is_retryable(),
-        });
+        let level = if err.is_fatal() {
+            error_forge::macros::ErrorLevel::Critical
+        } else {
+            error_forge::macros::ErrorLevel::Error
+        };
+        test_hook(ErrorContext::new(
+            err.caption(),
+            err.kind(),
+            level,
+            err.is_fatal(),
+            err.is_retryable(),
+        ));
     }
 
     // Check the counter value
