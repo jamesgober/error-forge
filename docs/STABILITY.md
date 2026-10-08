@@ -27,8 +27,12 @@ This applies to:
     constructors.
   - `ForgeError::register` calling the same hook (and the
     documented double-fire if both paths are exercised).
-  - `define_errors!` generating lowercase constructors and
-    `Display` / `Error` / `ForgeError` impls.
+  - `define_errors!` generating lowercase constructors, inherent
+    metadata methods (`kind`, `caption`, `is_retryable`,
+    `is_fatal`, `status_code`, `exit_code`) and `Display` /
+    `Error` impls. It does not implement `ForgeError`; wrapping
+    such an enum in `group!` needs a delegating impl (see the
+    `group!` rustdoc).
   - `group!` requiring each wrapped type to implement
     `ForgeError`.
 

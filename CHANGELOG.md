@@ -11,11 +11,19 @@ Patch release for `error-forge` and `error-forge-derive`. Bug fixes, documentati
 
 ### Changed
 
+- `define_errors!` passes a display string that has no field list through `format!`, as it already did for strings with one. `{{` and `}}` now print single braces, and a field named inline (`"Config error: {message}"`) is interpolated instead of printed literally. Strings without braces render as before. A string with a placeholder that names neither a field nor an item in scope (for example `"{}"` with no field list) used to print the braces and is now a compile error.
+- `define_errors!` rejects unknown `#[kind]` tags at compile time. A misspelled tag (`retriable = true`, `staus = 503`) used to be ignored, leaving the default value in place.
 - The error hook is no longer re-entered: an error created while the hook runs on the same thread (for example by a log sink that fails) does not call it again. A panic inside the hook is caught and discarded instead of unwinding through the `AppError` / `define_errors!` constructor or `ForgeError::register` call that fired it; the process panic hook still reports it.
 
 ### Removed
 
 - The `thiserror` dependency. Nothing in either crate used it and none of its types appear in the public API, so dependents cannot observe the removal; a clean default build is about 57% faster (3.0 s to 1.3 s in a local debug build). `docs/STABILITY.md` and `docs/COMPARISON.md` no longer list it.
+
+### Fixed
+
+- `define_errors!` no longer requires every field to implement `Display` and `Debug` when the variant has a custom display string. The default `"<caption>: <Variant> | field = value"` format is only generated for variants without one, and it chooses `Display` for a field named `source` and `Debug` for the others at expansion time, so fields such as `PathBuf`, `Vec<_>`, `Option<io::Error>` and `Option<Box<dyn Error + Send + Sync>>` work with a custom display. Output is unchanged for code that compiled before. The README's flagship example compiles again.
+- `define_errors!` accepts doc comments and other attributes on variants, `#[error(...)]` after `#[kind(...)]`, and a missing trailing comma after the last variant. Malformed variants (missing `#[kind]`, two `#[error]` attributes, tuple variants) get a specific error message. Large enums in the 1.0.1 form still expand without recursion.
+- `docs/STABILITY.md` no longer says `define_errors!` generates `ForgeError` impls; it generates inherent metadata methods.
 
 ## [1.0.1] - 2026-10-08
 

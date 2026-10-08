@@ -254,133 +254,304 @@ pub fn call_error_hook(caption: &str, kind: &str, is_fatal: bool, is_retryable: 
     }
 }
 
+/// Declare an error enum with constructors, metadata methods,
+/// `Display` and `std::error::Error`.
+///
+/// Each variant needs a `#[kind(Name, tag = value, ...)]` attribute and
+/// may carry one `#[error(display = "...", field, ...)]` attribute. The
+/// two may appear in either order, and doc comments or other attributes
+/// (`#[allow(...)]`, `#[serde(...)]`, ...) are passed through to the
+/// variant. The trailing comma after the last variant is optional.
+///
+/// Recognised `#[kind]` tags are `caption`, `retryable`, `fatal`,
+/// `status` and `exit`; any other tag is a compile error.
+///
+/// The macro generates, for each enum:
+///
+/// - the enum itself with `#[derive(Debug)]`;
+/// - a constructor per variant named after the lowercased variant
+///   (`Config` becomes `config(...)`), which fires the registered
+///   error hook;
+/// - inherent `kind`, `caption`, `is_retryable`, `is_fatal`,
+///   `status_code` and `exit_code` methods (it does **not** implement
+///   [`ForgeError`](crate::ForgeError); see the [`group!`](crate::group)
+///   docs for the delegating impl);
+/// - `Display`, using the `display` string when one is given, or
+///   `"<caption>: <Variant> | field = value ..."` otherwise. Only the
+///   default format needs the fields to implement `Debug` (and
+///   `Display` for a field named `source`); a custom display string
+///   only needs what it formats;
+/// - `std::error::Error`, whose `source()` returns a field named
+///   `source` through [`ErrorSource`].
+///
+/// The display string is a `format!` string. Fields listed after it are
+/// passed as named arguments, and fields it names inline (`{path:?}`)
+/// are captured directly, so `{{` and `}}` produce literal braces.
+///
+/// # Example
+///
+/// ```
+/// use error_forge::define_errors;
+/// use std::path::PathBuf;
+///
+/// define_errors! {
+///     pub enum StoreError {
+///         /// The store file could not be read.
+///         #[error(display = "cannot read {path:?}")]
+///         #[kind(Io, retryable = true, status = 503)]
+///         Read { path: PathBuf },
+///
+///         #[kind(Corrupt, fatal = true, exit = 3)]
+///         Corrupt
+///     }
+/// }
+///
+/// let err = StoreError::read(PathBuf::from("db.bin"));
+/// assert_eq!(err.to_string(), "cannot read \"db.bin\"");
+/// assert!(err.is_retryable());
+/// assert_eq!(StoreError::corrupt().exit_code(), 3);
+/// assert_eq!(StoreError::corrupt().to_string(), "Corrupt: Corrupt");
+/// ```
 #[macro_export]
 macro_rules! define_errors {
-    (
-        $(
-            $(#[$meta:meta])* $vis:vis enum $name:ident {
-                $(
-                   $(#[error(display = $display:literal $(, $($display_param:ident),* )?)])?
-                   #[kind($kind:ident $(, $($tag:ident = $val:expr),* )?)]
-                   $variant:ident $( { $($field:ident : $ftype:ty),* $(,)? } )?, )*
-            }
-        )*
+    // ------------------------------------------------------------------
+    // Code generation from the normalised variant list.
+    //
+    // Each variant arrives as
+    // `{ [attrs] [display] [kind, tags] Variant {fields}? }`.
+    // ------------------------------------------------------------------
+    (@emit [[$(#[$meta:meta])*] [$vis:vis] $name:ident]
+        $({
+            [$($vattr:tt)*]
+            [$($disp:tt)*]
+            [$kind:ident $(, $tag:ident = $val:expr)*]
+            $variant:ident $({ $($field:ident : $ftype:ty),* })?
+        })*
     ) => {
-        $(
-            $(#[$meta])* #[derive(Debug)]
-            #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-            $vis enum $name {
-                $( $variant $( { $($field : $ftype),* } )?, )*
-            }
+        $(#[$meta])* #[derive(::core::fmt::Debug)]
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize))]
+        $vis enum $name {
+            $( $($vattr)* $variant $( { $($field : $ftype),* } )?, )*
+        }
 
-            impl $name {
-                $(
-                    $crate::__private::pastey::paste! {
-                        pub fn [<$variant:lower>]($($($field : $ftype),*)?) -> Self {
-                            let instance = Self::$variant $( { $($field),* } )?;
-                            // Call the error hook - no need to directly access ERROR_HOOK here
-                            $crate::macros::call_error_hook(
-                                instance.caption(),
-                                instance.kind(),
-                                instance.is_fatal(),
-                                instance.is_retryable()
-                            );
-                            instance
-                        }
-                    }
-                )*
+        // Rejects misspelled `#[kind]` tags, which would otherwise be
+        // ignored silently.
+        const _: () = {
+            $( $( $crate::define_errors!(@check_tag $tag); )* )*
+        };
 
-                pub fn caption(&self) -> &'static str {
-                    match self {
-                        $( Self::$variant { .. } => {
-                            $crate::define_errors!(@get_caption $kind $(, $($tag = $val),* )?)
-                        } ),*
+        impl $name {
+            $(
+                $crate::__private::pastey::paste! {
+                    pub fn [<$variant:lower>]($($($field : $ftype),*)?) -> Self {
+                        let instance = Self::$variant $( { $($field),* } )?;
+                        $crate::macros::call_error_hook(
+                            instance.caption(),
+                            instance.kind(),
+                            instance.is_fatal(),
+                            instance.is_retryable()
+                        );
+                        instance
                     }
                 }
+            )*
 
-                pub fn kind(&self) -> &'static str {
-                    match self {
-                        $( Self::$variant { .. } => {
-                            stringify!($kind)
-                        } ),*
-                    }
-                }
-
-                pub fn is_retryable(&self) -> bool {
-                    match self {
-                        $( Self::$variant { .. } => {
-                            $crate::define_errors!(@get_tag retryable, false $(, $($tag = $val),* )?)
-                        } ),*
-                    }
-                }
-
-                pub fn is_fatal(&self) -> bool {
-                    match self {
-                        $( Self::$variant { .. } => {
-                            $crate::define_errors!(@get_tag fatal, false $(, $($tag = $val),* )?)
-                        } ),*
-                    }
-                }
-
-                pub fn status_code(&self) -> u16 {
-                    match self {
-                        $( Self::$variant { .. } => {
-                            $crate::define_errors!(@get_tag status, 500 $(, $($tag = $val),* )?)
-                        } ),*
-                    }
-                }
-
-                pub fn exit_code(&self) -> i32 {
-                    match self {
-                        $( Self::$variant { .. } => {
-                            $crate::define_errors!(@get_tag exit, 1 $(, $($tag = $val),* )?)
-                        } ),*
-                    }
+            pub fn caption(&self) -> &'static str {
+                match self {
+                    $( Self::$variant { .. } => {
+                        $crate::define_errors!(@get_caption $kind $(, $tag = $val)*)
+                    } ),*
                 }
             }
 
-            impl std::fmt::Display for $name {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    match self {
-                        $( Self::$variant $( { $($field),* } )? => {
-                            $(
-                                #[allow(unused_variables)]
-                                if let Some(display) = $crate::define_errors!(@format_display $display $(, $($display_param),*)?) {
-                                    return write!(f, "{}", display);
-                                }
-                            )?
-                            // If no custom display format is provided, use a default format
-                            write!(f, "{}: ", self.caption())?;
-                            write!(f, stringify!($variant))?;
-                            // Format each field with name=value
-                            $( $(
-                                write!(f, " | {} = ", stringify!($field))?
-                                ;
-                                match stringify!($field) {
-                                    "source" => write!(f, "{}", $field)?,
-                                    _ => write!(f, "{:?}", $field)?,
-                                }
-                            ; )* )?
-                            Ok(())
-                        } ),*
-                    }
+            pub fn kind(&self) -> &'static str {
+                match self {
+                    $( Self::$variant { .. } => {
+                        ::core::stringify!($kind)
+                    } ),*
                 }
             }
 
-            impl std::error::Error for $name {
-                fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                    match self {
-                        $( Self::$variant $( { $($field),* } )? => {
-                            $crate::define_errors!(@find_source $( $($field),* )? )
-                        } ),*
-                    }
+            pub fn is_retryable(&self) -> bool {
+                match self {
+                    $( Self::$variant { .. } => {
+                        $crate::define_errors!(@get_tag retryable, false $(, $tag = $val)*)
+                    } ),*
                 }
             }
-        )*
+
+            pub fn is_fatal(&self) -> bool {
+                match self {
+                    $( Self::$variant { .. } => {
+                        $crate::define_errors!(@get_tag fatal, false $(, $tag = $val)*)
+                    } ),*
+                }
+            }
+
+            pub fn status_code(&self) -> u16 {
+                match self {
+                    $( Self::$variant { .. } => {
+                        $crate::define_errors!(@get_tag status, 500 $(, $tag = $val)*)
+                    } ),*
+                }
+            }
+
+            pub fn exit_code(&self) -> i32 {
+                match self {
+                    $( Self::$variant { .. } => {
+                        $crate::define_errors!(@get_tag exit, 1 $(, $tag = $val)*)
+                    } ),*
+                }
+            }
+        }
+
+        impl ::core::fmt::Display for $name {
+            #[allow(unused_variables)]
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                match self {
+                    $( Self::$variant $( { $($field),* } )? => {
+                        $crate::define_errors!(
+                            @display f [$($disp)*] self.caption(); $variant $($($field)*)?
+                        )
+                    } ),*
+                }
+            }
+        }
+
+        impl ::std::error::Error for $name {
+            #[allow(unused_variables)]
+            fn source(&self) -> ::core::option::Option<&(dyn ::std::error::Error + 'static)> {
+                match self {
+                    $( Self::$variant $( { $($field),* } )? => {
+                        $crate::define_errors!(@find_source $( $($field),* )? )
+                    } ),*
+                }
+            }
+        }
     };
 
+    // `Display` body for one variant: the custom string when given ...
+    (@display $f:ident [$display:literal $(, $param:ident)*] $caption:expr; $variant:ident $($field:ident)*) => {
+        ::core::write!($f, $display $(, $param = $param)*)
+    };
+    // ... otherwise `<caption>: <Variant> | field = value ...`. The
+    // default format is only generated for variants without a custom
+    // string, so it is the only place the fields need `Debug`.
+    (@display $f:ident [] $caption:expr; $variant:ident $($field:ident)*) => {{
+        ::core::write!($f, "{}: ", $caption)?;
+        $f.write_str(::core::stringify!($variant))?;
+        $(
+            ::core::write!($f, " | {} = ", ::core::stringify!($field))?;
+            $crate::define_errors!(@fmt_field $f, $field, $field)?;
+        )*
+        ::core::result::Result::Ok(())
+    }};
+    (@display $($rest:tt)*) => {
+        ::core::compile_error!(
+            "define_errors!: a variant may carry only one #[error(display = \"...\")] attribute"
+        )
+    };
+
+    // A field named `source` is shown with `Display`, every other field
+    // with `Debug`. Matching the name here (rather than a runtime `match`
+    // on `stringify!`) keeps the unused branch out of the generated code.
+    (@fmt_field $f:ident, source, $field:ident) => {
+        ::core::write!($f, "{}", $field)
+    };
+    (@fmt_field $f:ident, $name:ident, $field:ident) => {
+        ::core::write!($f, "{:?}", $field)
+    };
+
+    (@check_tag caption) => {};
+    (@check_tag retryable) => {};
+    (@check_tag fatal) => {};
+    (@check_tag status) => {};
+    (@check_tag exit) => {};
+    (@check_tag $other:ident) => {
+        ::core::compile_error!(::core::concat!(
+            "define_errors!: unknown #[kind] tag `",
+            ::core::stringify!($other),
+            "`; expected one of `caption`, `retryable`, `fatal`, `status`, `exit`"
+        ));
+    };
+
+    // ------------------------------------------------------------------
+    // General variant parser, used when the fast form below does not
+    // match (attributes other than doc comments, doc comments placed
+    // between `#[error]` and `#[kind]`, or malformed input that deserves
+    // a precise error). It walks one attribute or variant per step, so
+    // very large enums written this way may need a higher
+    // `#![recursion_limit]`.
+    //
+    // State: `$hdr [done variants] [pending attrs] [display] [kind]`.
+    // ------------------------------------------------------------------
+    (@munch $hdr:tt [$($done:tt)*] [] [] []) => {
+        $crate::define_errors!(@emit $hdr $($done)*);
+    };
+    (@munch $hdr:tt $done:tt [$($attrs:tt)*] [] $kind:tt
+        #[error(display = $display:literal $(, $param:ident)* $(,)?)] $($rest:tt)*
+    ) => {
+        $crate::define_errors!(@munch $hdr $done [$($attrs)*] [$display $(, $param)*] $kind $($rest)*);
+    };
+    (@munch $hdr:tt $done:tt $attrs:tt $disp:tt $kind:tt #[error $($bad:tt)*] $($rest:tt)*) => {
+        ::core::compile_error!(::core::concat!(
+            "define_errors!: expected a single `#[error(display = \"...\", field, ...)]` per variant, found `#[error",
+            ::core::stringify!($($bad)*),
+            "]`"
+        ));
+    };
+    (@munch $hdr:tt $done:tt [$($attrs:tt)*] $disp:tt []
+        #[kind($kind:ident $(, $tag:ident = $val:expr)* $(,)?)] $($rest:tt)*
+    ) => {
+        $crate::define_errors!(@munch $hdr $done [$($attrs)*] $disp [$kind $(, $tag = $val)*] $($rest)*);
+    };
+    (@munch $hdr:tt $done:tt $attrs:tt $disp:tt $kind:tt #[kind $($bad:tt)*] $($rest:tt)*) => {
+        ::core::compile_error!(::core::concat!(
+            "define_errors!: expected a single `#[kind(Name, tag = value, ...)]` per variant, found `#[kind",
+            ::core::stringify!($($bad)*),
+            "]`"
+        ));
+    };
+    (@munch $hdr:tt $done:tt [$($attrs:tt)*] $disp:tt $kind:tt #[$($attr:tt)*] $($rest:tt)*) => {
+        $crate::define_errors!(@munch $hdr $done [$($attrs)* #[$($attr)*]] $disp $kind $($rest)*);
+    };
+    (@munch $hdr:tt [$($done:tt)*] [$($attrs:tt)*] [$($disp:tt)*] [$($kind:tt)+]
+        $variant:ident { $($field:ident : $ftype:ty),* $(,)? } $(, $($rest:tt)*)?
+    ) => {
+        $crate::define_errors!(@munch $hdr
+            [$($done)* { [$($attrs)*] [$($disp)*] [$($kind)+] $variant { $($field : $ftype),* } }]
+            [] [] [] $($($rest)*)?);
+    };
+    (@munch $hdr:tt [$($done:tt)*] [$($attrs:tt)*] [$($disp:tt)*] [$($kind:tt)+]
+        $variant:ident $(, $($rest:tt)*)?
+    ) => {
+        $crate::define_errors!(@munch $hdr
+            [$($done)* { [$($attrs)*] [$($disp)*] [$($kind)+] $variant }]
+            [] [] [] $($($rest)*)?);
+    };
+    (@munch $hdr:tt $done:tt $attrs:tt $disp:tt [] $variant:ident $($rest:tt)*) => {
+        ::core::compile_error!(::core::concat!(
+            "define_errors!: variant `",
+            ::core::stringify!($variant),
+            "` needs a `#[kind(Name, ...)]` attribute"
+        ));
+    };
+    (@munch $hdr:tt $done:tt $attrs:tt $disp:tt $kind:tt) => {
+        ::core::compile_error!("define_errors!: attributes must be followed by a variant");
+    };
+    (@munch $hdr:tt $done:tt $attrs:tt $disp:tt $kind:tt $($rest:tt)+) => {
+        ::core::compile_error!(::core::concat!(
+            "define_errors!: expected a unit or struct-like variant (`Name` or `Name { field: Type }`), found `",
+            ::core::stringify!($($rest)+),
+            "`"
+        ));
+    };
+
+    // ------------------------------------------------------------------
+    // Helpers kept from 1.0.x.
+    // ------------------------------------------------------------------
     (@find_source) => {
-        None
+        ::core::option::Option::None
     };
 
     (@find_source $field:ident $(, $rest:ident)*) => {
@@ -396,7 +567,7 @@ macro_rules! define_errors {
     };
 
     (@get_caption $kind:ident) => {
-        stringify!($kind)
+        ::core::stringify!($kind)
     };
 
     (@get_caption $kind:ident, caption = $caption:expr $(, $($rest:tt)*)?) => {
@@ -432,19 +603,64 @@ macro_rules! define_errors {
     };
 
     (@format_display $display:literal) => {
-        Some($display.to_string())
+        ::core::option::Option::Some(::std::format!($display))
     };
 
     (@format_display $display:literal, $($param:ident),+) => {
-        Some(format!($display, $($param = $param),+))
+        ::core::option::Option::Some(::std::format!($display, $($param = $param),+))
     };
 
-    // Support for nested field access in error display formatting
     (@format_display_field $field:ident) => {
         $field
     };
 
     (@format_display_field $field:ident . $($rest:ident).+) => {
         $field$(.$rest)+
+    };
+
+    // ------------------------------------------------------------------
+    // Entry points.
+    // ------------------------------------------------------------------
+
+    // Fast form: optional doc comments, then `#[kind]` with an optional
+    // `#[error]` before or after it. Matched without recursion, so enums
+    // of any size work. Every input accepted by 1.0.1 takes this path.
+    (
+        $(
+            $(#[$meta:meta])* $vis:vis enum $name:ident {
+                $(
+                    $(#[doc = $vdoc:expr])*
+                    $(#[error(display = $display_a:literal $(, $param_a:ident)* $(,)?)])?
+                    #[kind($kind:ident $(, $tag:ident = $val:expr)* $(,)?)]
+                    $(#[error(display = $display_b:literal $(, $param_b:ident)* $(,)?)])?
+                    $variant:ident $( { $($field:ident : $ftype:ty),* $(,)? } )?
+                ),* $(,)?
+            }
+        )*
+    ) => {
+        $(
+            $crate::define_errors!(@emit [[$(#[$meta])*] [$vis] $name]
+                $({
+                    [$(#[doc = $vdoc])*]
+                    [
+                        $($display_a $(, $param_a)*)?
+                        $($display_b $(, $param_b)*)?
+                    ]
+                    [$kind $(, $tag = $val)*]
+                    $variant $( { $($field : $ftype),* } )?
+                })*
+            );
+        )*
+    };
+
+    // General form: any attributes in any order.
+    (
+        $(
+            $(#[$meta:meta])* $vis:vis enum $name:ident { $($body:tt)* }
+        )*
+    ) => {
+        $(
+            $crate::define_errors!(@munch [[$(#[$meta])*] [$vis] $name] [] [] [] [] $($body)*);
+        )*
     };
 }

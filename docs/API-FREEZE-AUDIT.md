@@ -182,7 +182,8 @@ pub type Result<T> = AppResult<T>;
 #### Macros (always available, exported at crate root)
 
 - `define_errors!` — declarative custom error enum with generated
-  constructors and `ForgeError` metadata.
+  constructors and inherent metadata methods (it does not
+  implement `ForgeError`).
 - `group!` — coarse-grained composition of multiple
   `ForgeError`-implementing types into a single parent enum.
 

@@ -91,12 +91,18 @@ fn main() {
     let error = ServiceError::config("Missing API token".to_string());
     assert_eq!(error.kind(), "Config");
     assert_eq!(error.status_code(), 500);
+
+    let error = ServiceError::network("billing.internal".to_string(), None);
+    assert_eq!(error.to_string(), "Request to billing.internal failed");
+    assert!(error.is_retryable());
 }
 ```
 
 Notes:
 
-- `#[kind(...)]` is required for each variant.
+- `#[kind(...)]` is required for each variant; `#[error(display = ...)]` is optional and may come before or after it. Doc comments and other attributes on variants are kept, and the trailing comma is optional.
+- The recognised `#[kind]` tags are `caption`, `retryable`, `fatal`, `status` and `exit`. Any other tag is a compile error.
+- The display string is a `format!` string: list fields after it (`"{path}", path`) or name them inline (`"{path:?}"`). Only the fields it formats need `Display`/`Debug`. Variants without a display string use `"<caption>: <Variant> | field = value"`, which needs `Debug` on every field (and `Display` on a `source` field).
 - Constructors are generated from the lowercase variant name, such as `ServiceError::config(...)`.
 - A field named `source` participates in `std::error::Error::source()` chaining.
 - For custom `source` field types, implement `error_forge::macros::ErrorSource` in your crate.

@@ -142,12 +142,13 @@ fn main() {
 
 Rules and behavior:
 
-- Each variant requires `#[kind(...)]`.
+- Each variant requires `#[kind(...)]`. `#[error(display = ...)]` is optional and may come before or after it; doc comments and other attributes on a variant are kept, and the trailing comma after the last variant is optional.
 - Constructor names are the lowercase form of the variant name (`RequestFailed` becomes `requestfailed`).
-- `retryable`, `fatal`, `status`, `exit`, and `caption` can be supplied inside `#[kind(...)]`.
+- `retryable`, `fatal`, `status`, `exit`, and `caption` can be supplied inside `#[kind(...)]`. Any other tag is a compile error.
+- The display string is a `format!` string. Fields listed after it are passed as named arguments and fields named inline (`{path:?}`) are captured, so `{{` and `}}` print literal braces. Only the fields the string formats need `Display` or `Debug`.
 - A field named `source` is used for `Error::source()` chaining.
 - For custom `source` field types, implement `error_forge::macros::ErrorSource` in your crate.
-- If `#[error(display = ...)]` is omitted, display falls back to the caption, variant name, and debug-formatted fields.
+- If `#[error(display = ...)]` is omitted, display falls back to the caption, variant name, and debug-formatted fields (a `source` field is shown with `Display`). Only this fallback needs every field to implement `Debug`.
 
 ### `group!`
 
