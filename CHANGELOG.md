@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Patch release for `error-forge` and `error-forge-derive`. Bug fixes, documentation corrections and test/CI additions; no public item added, removed or renamed. A few fixes change output or reject input that used to be accepted silently; each is listed under Changed.
+
+### Removed
+
+- The `thiserror` dependency. Nothing in either crate used it and none of its types appear in the public API, so dependents cannot observe the removal; a clean default build is about 57% faster (3.0 s to 1.3 s in a local debug build). `docs/STABILITY.md` and `docs/COMPARISON.md` no longer list it.
+
 ## [1.0.1] - 2026-10-08
 
 Patch release for `error-forge` and `error-forge-derive` (both `1.0.1`). Bug fixes and documentation corrections only; no public item added, removed or renamed (`cargo semver-checks` against `1.0.0`: 222 checks pass).

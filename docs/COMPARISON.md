@@ -81,8 +81,7 @@ attributes. Zero runtime cost.
 ### Things `thiserror` does that `error-forge` doesn't
 
 - **Pure compile-time.** No runtime dependency at all.
-  `error-forge` has runtime deps (`thiserror`, `pastey`,
-  `parking_lot`).
+  `error-forge` has runtime deps (`pastey`, `parking_lot`).
 - **Standard error-attribute syntax.** Every Rust dev knows
   `#[error("...")]`.
 - **Zero metadata.** Just `Error` + `Display`. Nothing more,
@@ -94,8 +93,8 @@ attributes. Zero runtime cost.
   `is_retryable` / `is_fatal` / `status_code` / `exit_code`
   metadata that operational tooling cares about.
 - **`#[derive(ModError)]` proc macro** + `define_errors!` /
-  `group!` declarative macros provide three layers of
-  ergonomics on top of `thiserror`.
+  `group!` declarative macros provide three ways to define
+  errors that carry this metadata.
 - **Built-in `ErrorCollector`, `ContextError`, `CodedError`,
   registry, recovery primitives**, none of which `thiserror`
   attempts.
@@ -107,8 +106,8 @@ attributes. Zero runtime cost.
 - `error-forge` for application code or libraries that want to
   ship operational metadata with every error variant.
 
-`error-forge` already depends on `thiserror` internally — they
-compose, they don't compete.
+The two compose: a `thiserror` enum can implement `ForgeError`
+by hand and then be used with the rest of `error-forge`.
 
 ---
 
@@ -218,8 +217,8 @@ mirror the `anyhow` discussion above.
 The cases where `error-forge` is clearly *not* the right
 choice:
 
-1. **You want zero runtime deps.** `error-forge` has three
-   always-on deps (`thiserror`, `pastey`, `parking_lot`) and
+1. **You want zero runtime deps.** `error-forge` has two
+   always-on deps (`pastey`, `parking_lot`) and
    optional deps behind opt-in features. `thiserror` alone has
    zero runtime cost; choose it if dep footprint is the
    constraint.

@@ -154,7 +154,6 @@ The stability contract does NOT cover:
 
 The following runtime dependencies are sealed for the `1.x` line:
 
-- `thiserror` (always-on, error-handling support).
 - `pastey` (always-on, macro support — drop-in fork of the
   archived `paste`).
 - `parking_lot` (always-on, non-poisoning `Mutex` used by
@@ -170,6 +169,12 @@ Adding a new runtime dependency requires a `2.0.0` bump.
 Removing any of the always-on deps requires a `2.0.0` bump.
 Adding new optional dependencies behind a new opt-in feature is
 a minor-version bump.
+
+`1.0.0` and `1.0.1` also listed `thiserror` here. No code in either
+crate used it and no `thiserror` type appears in the public API, so
+dependents could not observe it (Cargo does not let a crate use a
+transitive dependency it does not declare). `1.0.2` drops it as a
+build-time fix.
 
 ## MSRV
 
