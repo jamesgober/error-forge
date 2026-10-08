@@ -62,6 +62,11 @@ use async_trait::async_trait;
 /// who actually want async behaviour override the default; everyone
 /// else can derive the trait without writing the method.
 #[cfg(feature = "async")]
+// `async_trait` expands each default `async fn` body into a method that
+// carries a bare `#[must_use]` and returns `Pin<Box<dyn Future>>`. Clippy
+// 1.99 treats that return type as already `#[must_use]` and fires
+// `double_must_use` on the generated code, which callers cannot fix.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait AsyncForgeError: StdError + Send + Sync + 'static {
     /// Returns the kind of error, typically matching the enum variant.
