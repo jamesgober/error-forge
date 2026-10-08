@@ -17,7 +17,9 @@ pub enum CircuitState {
     /// Circuit is open and operations will fail fast
     Open,
 
-    /// Circuit is partially open, allowing a test request
+    /// Circuit is partially open: the reset timeout has elapsed and
+    /// a single probe request is admitted. Other calls fail fast
+    /// until the probe resolves.
     HalfOpen,
 }
 
@@ -93,6 +95,44 @@ struct CircuitBreakerInner {
     state: CircuitState,
     failures: Vec<Instant>,
     last_state_change: Instant,
+    /// Set while the single half-open probe call is running.
+    probe_in_flight: bool,
+}
+
+impl CircuitBreakerInner {
+    /// The state the breaker is in once the reset timeout is taken into
+    /// account, without recording the transition.
+    fn effective_state(&self, now: Instant) -> CircuitState {
+        if self.state == CircuitState::Open
+            && now.duration_since(self.last_state_change)
+                >= Duration::from_millis(self.config.reset_timeout_ms)
+        {
+            CircuitState::HalfOpen
+        } else {
+            self.state
+        }
+    }
+}
+
+/// Releases the half-open probe slot if the protected closure unwinds.
+///
+/// A panicking probe counts as a failed probe: the circuit reopens and
+/// the reset timeout starts again. Without this the slot would stay
+/// taken and the breaker would reject every later call.
+struct ProbeGuard<'a> {
+    inner: &'a Mutex<CircuitBreakerInner>,
+    armed: bool,
+}
+
+impl Drop for ProbeGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let mut inner = self.inner.lock();
+            inner.probe_in_flight = false;
+            inner.state = CircuitState::Open;
+            inner.last_state_change = Instant::now();
+        }
+    }
 }
 
 /// Circuit breaker implementation to prevent cascading failures
@@ -119,14 +159,20 @@ impl CircuitBreaker {
                 state: CircuitState::Closed,
                 failures: Vec::new(),
                 last_state_change: Instant::now(),
+                probe_in_flight: false,
             })),
         }
     }
 
-    /// Get the current state of the circuit breaker
+    /// Get the current state of the circuit breaker.
+    ///
+    /// An open circuit whose reset timeout has elapsed reports
+    /// [`CircuitState::HalfOpen`]: the next [`execute`](Self::execute)
+    /// call is admitted as the probe. Reading the state does not
+    /// change it.
     pub fn state(&self) -> CircuitState {
         let inner = self.inner.lock();
-        inner.state
+        inner.effective_state(Instant::now())
     }
 
     /// Get the name of the circuit breaker
@@ -134,34 +180,51 @@ impl CircuitBreaker {
         &self.name
     }
 
-    /// Execute a function protected by the circuit breaker
+    /// Execute a function protected by the circuit breaker.
+    ///
+    /// While the circuit is open the call fails fast with
+    /// [`CircuitOpenError`]. Once the reset timeout elapses exactly one
+    /// call is admitted as a half-open probe; concurrent calls fail fast
+    /// until it resolves. A successful probe closes the circuit, and a
+    /// failed or panicking probe reopens it.
     pub fn execute<F, T, E>(&self, f: F) -> RecoveryResult<T>
     where
         F: FnOnce() -> Result<T, E>,
         E: std::error::Error + Send + Sync + 'static,
     {
         // First check if we can proceed with the call
-        let can_proceed = {
+        let is_probe = {
             let mut inner = self.inner.lock();
             self.update_state(&mut inner);
-            inner.state != CircuitState::Open
+            match inner.state {
+                CircuitState::Closed => false,
+                CircuitState::HalfOpen if !inner.probe_in_flight => {
+                    inner.probe_in_flight = true;
+                    true
+                }
+                // Open, or half-open with the probe already running.
+                _ => return Err(Box::new(CircuitOpenError::new(&self.name))),
+            }
         };
 
-        // If circuit is open, fail fast
-        if !can_proceed {
-            return Err(Box::new(CircuitOpenError::new(&self.name)));
-        }
+        let mut guard = ProbeGuard {
+            inner: &self.inner,
+            armed: is_probe,
+        };
 
         // Execute the function
-        match f() {
+        let outcome = f();
+        guard.armed = false;
+
+        match outcome {
             Ok(value) => {
                 // Success, potentially reset circuit breaker
-                self.on_success();
+                self.on_success(is_probe);
                 Ok(value)
             }
             Err(err) => {
                 // Failure, record it and potentially trip circuit
-                self.on_failure();
+                self.on_failure(is_probe);
                 Err(Box::new(err))
             }
         }
@@ -173,11 +236,15 @@ impl CircuitBreaker {
         inner.state = CircuitState::Closed;
         inner.failures.clear();
         inner.last_state_change = Instant::now();
+        inner.probe_in_flight = false;
     }
 
     /// Called when an operation succeeds
-    fn on_success(&self) {
+    fn on_success(&self, was_probe: bool) {
         let mut inner = self.inner.lock();
+        if was_probe {
+            inner.probe_in_flight = false;
+        }
         if inner.state == CircuitState::HalfOpen {
             // Successful test request, close the circuit
             inner.state = CircuitState::Closed;
@@ -187,8 +254,11 @@ impl CircuitBreaker {
     }
 
     /// Called when an operation fails
-    fn on_failure(&self) {
+    fn on_failure(&self, was_probe: bool) {
         let mut inner = self.inner.lock();
+        if was_probe {
+            inner.probe_in_flight = false;
+        }
 
         if inner.state == CircuitState::HalfOpen {
             // Failed during test request, reopen the circuit
@@ -223,15 +293,12 @@ impl CircuitBreaker {
 
     /// Update the circuit state based on timing
     fn update_state(&self, inner: &mut CircuitBreakerInner) {
-        if inner.state == CircuitState::Open {
-            let now = Instant::now();
-            let elapsed = now.duration_since(inner.last_state_change);
-
-            if elapsed >= Duration::from_millis(inner.config.reset_timeout_ms) {
-                // Reset timeout has elapsed, try half-open state
-                inner.state = CircuitState::HalfOpen;
-                inner.last_state_change = now;
-            }
+        let now = Instant::now();
+        if inner.state == CircuitState::Open && inner.effective_state(now) == CircuitState::HalfOpen
+        {
+            // Reset timeout has elapsed, try half-open state
+            inner.state = CircuitState::HalfOpen;
+            inner.last_state_change = now;
         }
     }
 }

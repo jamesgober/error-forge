@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ExponentialBackoff::next_delay` clamps attempts above `i32::MAX` instead of wrapping to a negative exponent, which returned a zero delay where the cap was expected.
 - `define_errors!` now works when invoked by path (`error_forge::define_errors! { ... }`) without importing the macro. Its internal helper arms recursed through the bare `define_errors!` name and failed with "cannot find macro `define_errors` in this scope"; they now go through `$crate::define_errors!`.
 - The `group!` rustdoc, README, `docs/API.md` and `docs/migration.md` no longer claim that `define_errors!` implements `ForgeError`. It generates inherent metadata methods only; the docs now show the delegating `impl ForgeError` needed to wrap such an enum in `group!`, and the `group!` rustdoc carries it as a compiled example.
+- `CircuitBreaker` now admits a single probe call once the reset timeout elapses, as `CircuitState::HalfOpen` documents. Concurrent calls fail fast with `CircuitOpenError` until the probe resolves; previously every caller was let through. A probe that panics reopens the circuit instead of leaving it stuck half-open.
+- `CircuitBreaker::state` reports `CircuitState::HalfOpen` once the reset timeout of an open circuit has elapsed. It used to keep reporting `Open` until the next `execute` call. Reading the state does not change it.
 
 ## [1.0.0] - 2026-05-18
 

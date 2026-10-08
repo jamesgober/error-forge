@@ -223,3 +223,96 @@ fn test_exponential_backoff_large_attempt_stays_capped() {
         Duration::from_millis(10_000)
     );
 }
+
+/// Trips `circuit` (threshold 1) and waits out its reset timeout.
+fn trip_and_wait(circuit: &CircuitBreaker, reset_timeout: Duration) {
+    let result = circuit.execute(|| -> Result<(), TestError> { Err(TestError("error")) });
+    assert!(result.is_err());
+    assert_eq!(circuit.state(), CircuitState::Open);
+    std::thread::sleep(reset_timeout + Duration::from_millis(150));
+}
+
+#[test]
+fn test_circuit_breaker_state_reports_half_open_after_timeout() {
+    // `state()` used to keep reporting `Open` after the reset timeout
+    // until the next `execute` call happened to move the circuit on.
+    let circuit = CircuitBreaker::with_config("state", CircuitBreakerConfig::new(1, 60_000, 100));
+    trip_and_wait(&circuit, Duration::from_millis(100));
+
+    assert_eq!(circuit.state(), CircuitState::HalfOpen);
+    // Reading the state has no side effects: it stays half-open and
+    // the next call is still admitted as the probe.
+    assert_eq!(circuit.state(), CircuitState::HalfOpen);
+    let result = circuit.execute(|| -> Result<u8, TestError> { Ok(7) });
+    assert_eq!(result.unwrap(), 7);
+    assert_eq!(circuit.state(), CircuitState::Closed);
+}
+
+#[test]
+fn test_circuit_breaker_half_open_admits_single_probe() {
+    // Every caller used to be let through while the circuit was
+    // half-open, not just one probe.
+    use std::sync::mpsc;
+
+    let circuit = CircuitBreaker::with_config("probe", CircuitBreakerConfig::new(1, 60_000, 100));
+    trip_and_wait(&circuit, Duration::from_millis(100));
+
+    let (probe_started_tx, probe_started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let second_ran = AtomicUsize::new(0);
+
+    std::thread::scope(|scope| {
+        let probe = scope.spawn(|| {
+            circuit.execute(move || -> Result<(), TestError> {
+                probe_started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                Ok(())
+            })
+        });
+
+        probe_started_rx.recv().unwrap();
+        assert_eq!(circuit.state(), CircuitState::HalfOpen);
+
+        // The probe is still running, so this call must fail fast.
+        let second = circuit.execute(|| -> Result<(), TestError> {
+            second_ran.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+
+        // Release the probe before asserting so a failure here cannot
+        // leave the scoped thread blocked forever.
+        release_tx.send(()).unwrap();
+        let probe_result = probe.join().unwrap();
+
+        let err = second.unwrap_err();
+        assert!(err.is::<error_forge::recovery::CircuitOpenError>());
+        assert_eq!(second_ran.load(Ordering::SeqCst), 0);
+        assert!(probe_result.is_ok());
+    });
+
+    assert_eq!(circuit.state(), CircuitState::Closed);
+    assert!(circuit
+        .execute(|| -> Result<(), TestError> { Ok(()) })
+        .is_ok());
+}
+
+#[test]
+fn test_circuit_breaker_panicking_probe_reopens_circuit() {
+    // A probe that panics counts as a failed probe. It must not leave
+    // the breaker stuck half-open with the probe slot taken.
+    let circuit = CircuitBreaker::with_config("panic", CircuitBreakerConfig::new(1, 60_000, 200));
+    trip_and_wait(&circuit, Duration::from_millis(200));
+
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = circuit.execute(|| -> Result<(), TestError> { panic!("probe panicked") });
+    }));
+    assert!(unwound.is_err());
+    assert_eq!(circuit.state(), CircuitState::Open);
+
+    std::thread::sleep(Duration::from_millis(350));
+    assert_eq!(circuit.state(), CircuitState::HalfOpen);
+    assert!(circuit
+        .execute(|| -> Result<(), TestError> { Ok(()) })
+        .is_ok());
+    assert_eq!(circuit.state(), CircuitState::Closed);
+}
