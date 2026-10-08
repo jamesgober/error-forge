@@ -67,8 +67,14 @@ impl ErrorRegistry {
 
     /// Get info about a registered error code
     pub fn get_code_info(&self, code: &str) -> Option<ErrorCodeInfo> {
+        self.with_code_info(code, ErrorCodeInfo::clone)
+    }
+
+    /// Run `f` on the entry for `code` under the read lock, without
+    /// cloning it. `f` must not call back into the registry.
+    fn with_code_info<R>(&self, code: &str, f: impl FnOnce(&ErrorCodeInfo) -> R) -> Option<R> {
         match self.codes.read() {
-            Ok(codes) => codes.get(code).cloned(),
+            Ok(codes) => codes.get(code).map(f),
             Err(_) => None,
         }
     }
@@ -187,8 +193,9 @@ impl<E: ForgeError> ForgeError for CodedError<E> {
 
     fn is_retryable(&self) -> bool {
         self.retryable.unwrap_or_else(|| {
-            self.code_info()
-                .map_or_else(|| self.error.is_retryable(), |info| info.retryable)
+            ErrorRegistry::global()
+                .with_code_info(&self.code, |info| info.retryable)
+                .unwrap_or_else(|| self.error.is_retryable())
         })
     }
 
@@ -209,12 +216,17 @@ impl<E: ForgeError> ForgeError for CodedError<E> {
     }
 
     fn dev_message(&self) -> String {
-        if let Some(info) = self.code_info() {
-            if let Some(url) = info.documentation_url {
-                return format!("[{}] {} ({})", self.code, self.error.dev_message(), url);
-            }
-        }
-        format!("[{}] {}", self.code, self.error.dev_message())
+        // The inner message is built before taking the registry lock so
+        // user code never runs while the lock is held.
+        let inner = self.error.dev_message();
+        ErrorRegistry::global()
+            .with_code_info(&self.code, |info| {
+                info.documentation_url
+                    .as_ref()
+                    .map(|url| format!("[{}] {} ({})", self.code, inner, url))
+            })
+            .flatten()
+            .unwrap_or_else(|| format!("[{}] {}", self.code, inner))
     }
 
     fn backtrace(&self) -> Option<&std::backtrace::Backtrace> {

@@ -94,3 +94,27 @@ fn test_coded_error_instance_overrides() {
     assert_eq!(error.status_code(), 429);
     assert!(error.is_fatal());
 }
+
+#[test]
+fn test_coded_error_registry_lookups_without_cloning_keep_output() {
+    let _ = register_error_code(
+        "TEST-BORROW",
+        "Borrowed lookup",
+        Some("https://docs.example.com/errors/TEST-BORROW"),
+        true,
+    );
+    let error = AppError::config("bad").with_code("TEST-BORROW");
+    assert!(error.is_retryable());
+    assert_eq!(
+        error.dev_message(),
+        "[TEST-BORROW] [Config] \u{2699}\u{fe0f} Configuration Error: bad (https://docs.example.com/errors/TEST-BORROW)"
+    );
+
+    // Unregistered codes fall back to the wrapped error.
+    let error = AppError::config("bad").with_code("TEST-UNREGISTERED");
+    assert!(!error.is_retryable());
+    assert_eq!(
+        error.dev_message(),
+        "[TEST-UNREGISTERED] [Config] \u{2699}\u{fe0f} Configuration Error: bad"
+    );
+}
