@@ -32,7 +32,7 @@ It ships with a built-in `AppError`, a declarative `define_errors!` macro, an op
 error-forge = "1.0.1"
 ```
 
-MSRV: Rust `1.81`. CI verifies the crate builds on the exact `1.81.0` toolchain.
+MSRV: Rust `1.81`. CI builds and tests the crate on the exact `1.81.0` toolchain.
 
 Common optional features:
 
@@ -275,16 +275,20 @@ fn main() {
 ## Quality Bar
 
 Every push runs the following on a Linux + macOS + Windows matrix
-across nine feature combinations, plus dedicated MSRV (`1.81.0`)
-and `cargo audit` jobs:
+across nine feature combinations, plus dedicated MSRV (`1.81.0`),
+minimal-versions and `cargo audit` jobs:
 
 - `cargo build --workspace --all-features`
-- `cargo test --workspace` per feature combination
-- `cargo clippy --workspace --all-features -- -D warnings`
-- `cargo clippy --workspace --no-default-features -- -D warnings`
+- `cargo test --workspace` per feature combination, including the
+  README examples and `docs/API.md` as doctests and compile-pass /
+  compile-fail tests for the macros
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo doc --workspace --all-features --no-deps` under
   `RUSTDOCFLAGS="-D warnings"`
-- `cargo +1.81 build --workspace --all-features` (MSRV)
+- `cargo +1.81 build` and `cargo +1.81 test` (MSRV)
+- a build on `1.81` with every direct dependency at its declared
+  minimum version
 - `cargo audit` against the RustSec advisory database
 
 ## Documentation

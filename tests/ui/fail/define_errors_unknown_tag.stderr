@@ -1,0 +1,12 @@
+error: define_errors!: unknown #[kind] tag `retriable`; expected one of `caption`, `retryable`, `fatal`, `status`, `exit`
+ --> tests/ui/fail/define_errors_unknown_tag.rs:1:1
+  |
+1 | / error_forge::define_errors! {
+2 | |     pub enum NetError {
+3 | |         #[kind(Net, retriable = true, status = 503)]
+4 | |         Timeout,
+5 | |     }
+6 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `$crate::define_errors` which comes from the expansion of the macro `error_forge::define_errors` (in Nightly builds, run with -Z macro-backtrace for more info)

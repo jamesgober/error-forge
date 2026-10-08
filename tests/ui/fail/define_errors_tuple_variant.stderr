@@ -1,0 +1,12 @@
+error: define_errors!: expected a unit or struct-like variant (`Name` or `Name { field: Type }`), found `Timeout(u32),`
+ --> tests/ui/fail/define_errors_tuple_variant.rs:1:1
+  |
+1 | / error_forge::define_errors! {
+2 | |     pub enum NetError {
+3 | |         #[kind(Net)]
+4 | |         Timeout(u32),
+5 | |     }
+6 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `$crate::define_errors` which comes from the expansion of the macro `error_forge::define_errors` (in Nightly builds, run with -Z macro-backtrace for more info)

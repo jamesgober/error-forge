@@ -75,15 +75,29 @@ jobs:
 
   # MSRV verification. `rust-version` in `Cargo.toml` declares the
   # floor; this job builds on that exact toolchain to catch any
-  # accidental use of newer-than-MSRV APIs.
+  # accidental use of newer-than-MSRV APIs, then runs the tests.
   msrv:
     name: MSRV (Rust 1.81)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
       - uses: dtolnay/rust-toolchain@1.81.0
       - name: Build (all features)
-        run: cargo build --workspace --all-features
+        run: cargo +1.81.0 build --workspace --all-features
+      # The committed lockfile tracks the newest dev-dependencies, and
+      # some of them (`trybuild`, its `toml` stack) need a newer Rust.
+      # Re-resolve with the MSRV-aware resolver so the tests build on
+      # 1.81. Runtime dependencies are already covered by the build
+      # step above, which uses the committed lockfile.
+      - name: Resolve 1.81-compatible dev-dependencies
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: cargo +stable update
+      # The UI test compares compiler output recorded on stable, so it
+      # only runs in the stable jobs.
+      - name: Test (all features)
+        run: cargo +1.81.0 test --workspace --all-features -- --skip trybuild_ui_tests
 
   # Checks that the version floors declared in `Cargo.toml` really
   # build: every direct dependency is resolved to the lowest version

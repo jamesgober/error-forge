@@ -110,4 +110,8 @@ members = ["error-forge-derive"]
 
 [dev-dependencies]
 serde_json = "1.0"
+# Compile-pass / compile-fail tests (`tests/ui_test.rs`). Needs a newer
+# toolchain than the MSRV; the MSRV CI job resolves an older release
+# and skips the UI test.
+trybuild = "1.0.100"
 tokio = { version = "1.52", features = ["full", "test-util", "macros"] }

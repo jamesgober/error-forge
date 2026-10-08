@@ -1,0 +1,5 @@
+error: ModError cannot be derived for unions; use an enum or a struct
+ --> tests/ui/fail/derive_union.rs:4:5
+  |
+4 | pub union Bits {
+  |     ^^^^^

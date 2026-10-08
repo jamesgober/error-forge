@@ -1,0 +1,29 @@
+error: `error_http_status` expects an integer literal
+ --> tests/ui/fail/derive_malformed_values.rs:5:25
+  |
+5 |     #[error_http_status("404")]
+  |                         ^^^^^
+
+error: `error_exit_code` expects an integer in i32
+ --> tests/ui/fail/derive_malformed_values.rs:6:23
+  |
+6 |     #[error_exit_code(99999999999)]
+  |                       ^^^^^^^^^^^
+
+error: `error_retryable` expects `true` or `false`
+ --> tests/ui/fail/derive_malformed_values.rs:7:23
+  |
+7 |     #[error_retryable("yes")]
+  |                       ^^^^^
+
+error: `error_display` expects a string literal
+ --> tests/ui/fail/derive_malformed_values.rs:8:21
+  |
+8 |     #[error_display(42)]
+  |                     ^^
+
+error: `error_http_status` expects an integer in u16
+  --> tests/ui/fail/derive_malformed_values.rs:11:25
+   |
+11 |     #[error_http_status(-1)]
+   |                         ^^

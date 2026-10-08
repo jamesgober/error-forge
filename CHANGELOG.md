@@ -25,6 +25,7 @@ Patch release for `error-forge` and `error-forge-derive`. Bug fixes, documentati
 - `CircuitBreaker` fails fast with one allocation instead of two: the circuit name is shared with `CircuitOpenError` instead of copied into it.
 - `CodedError::is_retryable` and `CodedError::dev_message` read the registry entry in place instead of cloning it on every call.
 - The colour detection in `ConsoleTheme` drops a Windows-only `WT_SESSION` check that returned the same answer as the default path. No behaviour change.
+- CI runs the test suite on the `1.81` MSRV (with an MSRV-compatible resolution of the dev-dependencies), adds the minimal-versions build, and runs compile-pass / compile-fail tests for `define_errors!`, `group!` and `#[derive(ModError)]` through `trybuild` (new dev-dependency). `tests/thread_safety_test.rs` now exercises the hook, the error-code registry, collectors and the circuit breaker from several threads; it previously never shared anything between threads. Regression tests cover every fix in this release.
 
 ### Removed
 
