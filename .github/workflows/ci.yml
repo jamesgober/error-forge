@@ -12,7 +12,7 @@ on:
 # now so every JS-action step in this workflow runs on Node 24,
 # regardless of which Node version the action itself declares. The
 # flag is a no-op for the actions that already target Node 24
-# natively (e.g. `actions/checkout@v5`).
+# natively (e.g. `actions/checkout@v7`).
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -34,7 +34,7 @@ jobs:
           - "derive serde console backtrace"
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -47,18 +47,25 @@ jobs:
   full-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Check all features
         run: cargo check --workspace --all-features
-      - name: Clippy check
-        run: cargo clippy --workspace --all-features -- -D warnings
+      - name: Clippy check (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Clippy check (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # The build-test matrix above never enables `async`, `log`,
+      # `tracing`, `jitter`, `registry`, `collector` or `context`, so
+      # the tests gated on those features only run here.
+      - name: Test all features
+        run: cargo test --workspace --all-features
 
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Check documentation
@@ -73,7 +80,7 @@ jobs:
     name: MSRV (Rust 1.81)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.81.0
       - name: Build (all features)
         run: cargo build --workspace --all-features
@@ -91,10 +98,14 @@ jobs:
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # Prebuilt binary instead of `cargo install`, which compiled
+      # cargo-audit from source on every run.
       - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
       - name: Run cargo audit
         run: cargo audit --deny warnings
 
@@ -106,7 +117,7 @@ jobs:
     name: cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check all

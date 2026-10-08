@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `Cargo.lock` refreshed to the latest compatible releases (`serde 1.0.229`, `log 0.4.33`, `async-trait 0.1.91`, `rand 0.8.7`, `serde_json 1.0.151`, `tokio 1.53.0`, `quote 1.0.47`, `proc-macro2 1.0.107`). No `Cargo.toml` requirement changes; the lockfile is not part of the published crate.
+- `AsyncForgeError` carries `#[allow(clippy::double_must_use)]` so the code `async_trait` generates for its default methods passes clippy 1.99 under `-D warnings`. No API or behaviour change.
+- CI uses `actions/checkout@v7` (Node 24), installs a prebuilt `cargo-audit` instead of compiling it each run, runs clippy with `--all-targets` for default and all features, and runs the test suite with `--all-features` so the `async`, `log`, `tracing` and `jitter` paths are exercised.
+
 ## [1.0.0] - 2026-05-18
 
 Stable API. The public surface is locked under SemVer for the entire `1.x` line — see [`docs/STABILITY.md`](docs/STABILITY.md) for the binding policy and [`docs/API-FREEZE-AUDIT.md`](docs/API-FREEZE-AUDIT.md) for the surface manifest. Three breaking corrections at the freeze boundary (`group!` macro, `parking_lot::Mutex` in `CircuitBreaker`, `AsyncForgeError::async_handle` default), several deprecations, `#[non_exhaustive]` annotations on public types likely to grow, and a substantial documentation expansion. See the full release notes in [`.dev/release/v1.0.0.md`](.dev/release/v1.0.0.md).
