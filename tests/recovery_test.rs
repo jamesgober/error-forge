@@ -317,6 +317,116 @@ fn test_circuit_breaker_panicking_probe_reopens_circuit() {
     assert_eq!(circuit.state(), CircuitState::Closed);
 }
 
+/// A call admitted while the circuit was closed finishes while the
+/// half-open probe is running. Its outcome must not move the circuit:
+/// only the probe decides how it leaves half-open.
+fn run_stale_call_during_probe(stale_succeeds: bool) {
+    use error_forge::recovery::CircuitOpenError;
+    use std::sync::mpsc;
+
+    let reset_timeout = Duration::from_millis(100);
+    let circuit = CircuitBreaker::with_config("stale", CircuitBreakerConfig::new(1, 60_000, 100));
+    let (stale_started_tx, stale_started_rx) = mpsc::channel();
+    let (stale_release_tx, stale_release_rx) = mpsc::channel::<()>();
+    let (probe_started_tx, probe_started_rx) = mpsc::channel();
+    let (probe_release_tx, probe_release_rx) = mpsc::channel::<()>();
+
+    std::thread::scope(|scope| {
+        let stale = scope.spawn(|| {
+            circuit.execute(move || -> Result<(), TestError> {
+                stale_started_tx.send(()).unwrap();
+                stale_release_rx.recv().unwrap();
+                if stale_succeeds {
+                    Ok(())
+                } else {
+                    Err(TestError("stale"))
+                }
+            })
+        });
+        stale_started_rx.recv().unwrap();
+
+        trip_and_wait(&circuit, reset_timeout);
+        assert_eq!(circuit.state(), CircuitState::HalfOpen);
+
+        let probe = scope.spawn(|| {
+            circuit.execute(move || -> Result<(), TestError> {
+                probe_started_tx.send(()).unwrap();
+                probe_release_rx.recv().unwrap();
+                Ok(())
+            })
+        });
+        probe_started_rx.recv().unwrap();
+
+        // The stale call resolves while the probe is still in flight.
+        stale_release_tx.send(()).unwrap();
+        let stale_result = stale.join().unwrap();
+        let state_after_stale = circuit.state();
+        let extra = circuit.execute(|| -> Result<(), TestError> { Ok(()) });
+
+        // Release the probe before asserting so a failure cannot leave
+        // the scoped thread blocked.
+        probe_release_tx.send(()).unwrap();
+        let probe_result = probe.join().unwrap();
+
+        assert_eq!(stale_result.is_ok(), stale_succeeds);
+        assert_eq!(state_after_stale, CircuitState::HalfOpen);
+        assert!(extra.unwrap_err().is::<CircuitOpenError>());
+        assert!(probe_result.is_ok());
+    });
+
+    // The successful probe closes the circuit.
+    assert_eq!(circuit.state(), CircuitState::Closed);
+}
+
+#[test]
+fn test_circuit_breaker_stale_failure_does_not_reopen_half_open_circuit() {
+    run_stale_call_during_probe(false);
+}
+
+#[test]
+fn test_circuit_breaker_stale_success_does_not_close_half_open_circuit() {
+    run_stale_call_during_probe(true);
+}
+
+#[test]
+fn test_circuit_breaker_failure_admitted_before_reset_is_ignored() {
+    use std::sync::mpsc;
+
+    let circuit =
+        CircuitBreaker::with_config("reset", CircuitBreakerConfig::new(1, 60_000, 60_000));
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+
+    std::thread::scope(|scope| {
+        let slow = scope.spawn(|| {
+            circuit.execute(move || -> Result<(), TestError> {
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                Err(TestError("slow"))
+            })
+        });
+        started_rx.recv().unwrap();
+        circuit.reset();
+        release_tx.send(()).unwrap();
+        assert!(slow.join().unwrap().is_err());
+    });
+
+    // The failure belongs to the period before the reset.
+    assert_eq!(circuit.state(), CircuitState::Closed);
+}
+
+#[test]
+fn test_circuit_open_error_names_the_circuit() {
+    let circuit =
+        CircuitBreaker::with_config("orders", CircuitBreakerConfig::new(1, 60_000, 60_000));
+    let _ = circuit.execute(|| -> Result<(), TestError> { Err(TestError("down")) });
+    let err = circuit
+        .execute(|| -> Result<(), TestError> { Ok(()) })
+        .unwrap_err();
+    assert_eq!(err.to_string(), "Circuit 'orders' is open, failing fast");
+    assert_eq!(circuit.name(), "orders");
+}
+
 #[test]
 fn test_exponential_backoff_first_attempt_is_capped() {
     // Attempt 0 used to return the initial delay even when it was

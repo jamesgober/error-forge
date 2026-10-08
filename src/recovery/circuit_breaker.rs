@@ -97,6 +97,13 @@ struct CircuitBreakerInner {
     last_state_change: Instant,
     /// Set while the single half-open probe call is running.
     probe_in_flight: bool,
+    /// Bumped on every state change. A call records the generation it
+    /// was admitted under, and its outcome only counts while that
+    /// generation is still current. A slow call admitted while the
+    /// circuit was closed therefore cannot close or reopen it after it
+    /// has tripped; only the probe admitted in half-open can move the
+    /// circuit out of half-open.
+    generation: u64,
 }
 
 impl CircuitBreakerInner {
@@ -112,6 +119,29 @@ impl CircuitBreakerInner {
             self.state
         }
     }
+
+    /// Move to `state` and start a new generation.
+    fn transition(&mut self, state: CircuitState, now: Instant) {
+        self.state = state;
+        self.last_state_change = now;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Whether a call admitted under `admission` is the probe of the
+    /// current half-open period.
+    fn is_current_probe(&self, admission: Admission) -> bool {
+        admission.is_probe
+            && admission.generation == self.generation
+            && self.state == CircuitState::HalfOpen
+    }
+}
+
+/// How a call was let through: as the half-open probe or as a normal
+/// call in the closed state, and under which generation.
+#[derive(Clone, Copy)]
+struct Admission {
+    is_probe: bool,
+    generation: u64,
 }
 
 /// Releases the half-open probe slot if the protected closure unwinds.
@@ -121,6 +151,7 @@ impl CircuitBreakerInner {
 /// taken and the breaker would reject every later call.
 struct ProbeGuard<'a> {
     inner: &'a Mutex<CircuitBreakerInner>,
+    admission: Admission,
     armed: bool,
 }
 
@@ -128,9 +159,10 @@ impl Drop for ProbeGuard<'_> {
     fn drop(&mut self) {
         if self.armed {
             let mut inner = self.inner.lock();
-            inner.probe_in_flight = false;
-            inner.state = CircuitState::Open;
-            inner.last_state_change = Instant::now();
+            if inner.is_current_probe(self.admission) {
+                inner.probe_in_flight = false;
+                inner.transition(CircuitState::Open, Instant::now());
+            }
         }
     }
 }
@@ -140,7 +172,9 @@ impl Drop for ProbeGuard<'_> {
 /// The circuit breaker tracks failures and "trips" after a threshold is reached,
 /// preventing further calls and allowing the system to recover.
 pub struct CircuitBreaker {
-    name: String,
+    /// Shared with every `CircuitOpenError` this breaker returns, so the
+    /// fail-fast path does not copy the name.
+    name: Arc<str>,
     inner: Arc<Mutex<CircuitBreakerInner>>,
 }
 
@@ -153,13 +187,14 @@ impl CircuitBreaker {
     /// Create a new circuit breaker with custom configuration
     pub fn with_config(name: impl Into<String>, config: CircuitBreakerConfig) -> Self {
         Self {
-            name: name.into(),
+            name: Arc::from(name.into()),
             inner: Arc::new(Mutex::new(CircuitBreakerInner {
                 config,
                 state: CircuitState::Closed,
                 failures: Vec::new(),
                 last_state_change: Instant::now(),
                 probe_in_flight: false,
+                generation: 0,
             })),
         }
     }
@@ -187,29 +222,57 @@ impl CircuitBreaker {
     /// call is admitted as a half-open probe; concurrent calls fail fast
     /// until it resolves. A successful probe closes the circuit, and a
     /// failed or panicking probe reopens it.
+    ///
+    /// Only the probe decides how the circuit leaves half-open. A call
+    /// that was admitted while the circuit was still closed and finishes
+    /// after it tripped does not affect the new state.
+    ///
+    /// The closure's error is boxed into [`RecoveryResult`]; downcast it
+    /// to tell a fail-fast rejection from the closure's own error.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use error_forge::recovery::{CircuitBreaker, CircuitOpenError};
+    ///
+    /// let breaker = CircuitBreaker::new("inventory-service");
+    ///
+    /// let value = breaker.execute(|| Ok::<u32, std::io::Error>(42));
+    /// assert_eq!(value.unwrap(), 42);
+    ///
+    /// let failed = breaker.execute(|| Err::<u32, _>(std::io::Error::other("down")));
+    /// let error = failed.unwrap_err();
+    /// assert!(error.downcast_ref::<CircuitOpenError>().is_none());
+    /// assert!(error.downcast_ref::<std::io::Error>().is_some());
+    /// ```
     pub fn execute<F, T, E>(&self, f: F) -> RecoveryResult<T>
     where
         F: FnOnce() -> Result<T, E>,
         E: std::error::Error + Send + Sync + 'static,
     {
         // First check if we can proceed with the call
-        let is_probe = {
+        let admission = {
             let mut inner = self.inner.lock();
             self.update_state(&mut inner);
-            match inner.state {
+            let is_probe = match inner.state {
                 CircuitState::Closed => false,
                 CircuitState::HalfOpen if !inner.probe_in_flight => {
                     inner.probe_in_flight = true;
                     true
                 }
                 // Open, or half-open with the probe already running.
-                _ => return Err(Box::new(CircuitOpenError::new(&self.name))),
+                _ => return Err(Box::new(CircuitOpenError::new(Arc::clone(&self.name)))),
+            };
+            Admission {
+                is_probe,
+                generation: inner.generation,
             }
         };
 
         let mut guard = ProbeGuard {
             inner: &self.inner,
-            armed: is_probe,
+            admission,
+            armed: admission.is_probe,
         };
 
         // Execute the function
@@ -219,12 +282,12 @@ impl CircuitBreaker {
         match outcome {
             Ok(value) => {
                 // Success, potentially reset circuit breaker
-                self.on_success(is_probe);
+                self.on_success(admission);
                 Ok(value)
             }
             Err(err) => {
                 // Failure, record it and potentially trip circuit
-                self.on_failure(is_probe);
+                self.on_failure(admission);
                 Err(Box::new(err))
             }
         }
@@ -233,37 +296,38 @@ impl CircuitBreaker {
     /// Manually reset the circuit breaker to closed state
     pub fn reset(&self) {
         let mut inner = self.inner.lock();
-        inner.state = CircuitState::Closed;
+        inner.transition(CircuitState::Closed, Instant::now());
         inner.failures.clear();
-        inner.last_state_change = Instant::now();
         inner.probe_in_flight = false;
     }
 
     /// Called when an operation succeeds
-    fn on_success(&self, was_probe: bool) {
+    fn on_success(&self, admission: Admission) {
         let mut inner = self.inner.lock();
-        if was_probe {
-            inner.probe_in_flight = false;
-        }
-        if inner.state == CircuitState::HalfOpen {
+        if inner.is_current_probe(admission) {
             // Successful test request, close the circuit
-            inner.state = CircuitState::Closed;
+            inner.probe_in_flight = false;
             inner.failures.clear();
-            inner.last_state_change = Instant::now();
+            inner.transition(CircuitState::Closed, Instant::now());
         }
     }
 
     /// Called when an operation fails
-    fn on_failure(&self, was_probe: bool) {
+    fn on_failure(&self, admission: Admission) {
         let mut inner = self.inner.lock();
-        if was_probe {
-            inner.probe_in_flight = false;
+
+        if admission.is_probe {
+            if inner.is_current_probe(admission) {
+                // Failed during test request, reopen the circuit
+                inner.probe_in_flight = false;
+                inner.transition(CircuitState::Open, Instant::now());
+            }
+            return;
         }
 
-        if inner.state == CircuitState::HalfOpen {
-            // Failed during test request, reopen the circuit
-            inner.state = CircuitState::Open;
-            inner.last_state_change = Instant::now();
+        // A call admitted under an earlier generation (before the
+        // circuit tripped, or before a reset) no longer counts.
+        if inner.state != CircuitState::Closed || admission.generation != inner.generation {
             return;
         }
 
@@ -282,12 +346,9 @@ impl CircuitBreaker {
         }
 
         // Check if threshold is reached
-        if inner.state == CircuitState::Closed
-            && inner.failures.len() >= inner.config.failure_threshold
-        {
+        if inner.failures.len() >= inner.config.failure_threshold {
             // Trip the circuit
-            inner.state = CircuitState::Open;
-            inner.last_state_change = now;
+            inner.transition(CircuitState::Open, now);
         }
     }
 
@@ -297,8 +358,8 @@ impl CircuitBreaker {
         if inner.state == CircuitState::Open && inner.effective_state(now) == CircuitState::HalfOpen
         {
             // Reset timeout has elapsed, try half-open state
-            inner.state = CircuitState::HalfOpen;
-            inner.last_state_change = now;
+            inner.transition(CircuitState::HalfOpen, now);
+            inner.probe_in_flight = false;
         }
     }
 }
@@ -306,14 +367,12 @@ impl CircuitBreaker {
 /// Error returned when circuit is open
 #[derive(Debug)]
 pub struct CircuitOpenError {
-    circuit_name: String,
+    circuit_name: Arc<str>,
 }
 
 impl CircuitOpenError {
-    fn new(circuit_name: &str) -> Self {
-        Self {
-            circuit_name: circuit_name.to_string(),
-        }
+    fn new(circuit_name: Arc<str>) -> Self {
+        Self { circuit_name }
     }
 }
 
