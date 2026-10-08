@@ -118,26 +118,31 @@ pub mod tracing_impl {
     use super::*;
     use tracing::{debug, error, info, warn};
 
-    /// A logger that uses the `tracing` crate
+    /// A logger that uses the `tracing` crate.
+    ///
+    /// Each error becomes one event with the fields `kind` (from
+    /// [`ForgeError::kind`]) and `dev_message` (from
+    /// [`ForgeError::dev_message`]); the event message is the level
+    /// name (`"Error"`, `"Warning"`, ...).
     pub struct TracingAdapter;
 
     impl ErrorLogger for TracingAdapter {
         fn log_error(&self, error: &dyn ForgeError, level: ErrorLevel) {
             match level {
                 ErrorLevel::Critical => {
-                    error!(target: "error-forge", kind = %error.kind(), message = %error.dev_message(), "Critical error")
+                    error!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Critical error")
                 }
                 ErrorLevel::Error => {
-                    error!(target: "error-forge", kind = %error.kind(), message = %error.dev_message(), "Error")
+                    error!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Error")
                 }
                 ErrorLevel::Warning => {
-                    warn!(target: "error-forge", kind = %error.kind(), message = %error.dev_message(), "Warning")
+                    warn!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Warning")
                 }
                 ErrorLevel::Info => {
-                    info!(target: "error-forge", kind = %error.kind(), message = %error.dev_message(), "Info")
+                    info!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Info")
                 }
                 ErrorLevel::Debug => {
-                    debug!(target: "error-forge", kind = %error.kind(), message = %error.dev_message(), "Debug")
+                    debug!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Debug")
                 }
             }
         }
