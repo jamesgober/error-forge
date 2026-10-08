@@ -428,6 +428,30 @@ fn test_circuit_open_error_names_the_circuit() {
 }
 
 #[test]
+fn test_forge_error_recovery_retry_honours_receiver_retryability() {
+    use error_forge::recovery::ForgeErrorRecovery;
+    use error_forge::AppError;
+
+    // A non-retryable receiver runs the operation once.
+    let calls = AtomicUsize::new(0);
+    let result: Result<(), AppError> = AppError::config("static").retry(3, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Err(AppError::network("x", None))
+    });
+    assert!(result.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // A retryable receiver retries retryable errors.
+    let calls = AtomicUsize::new(0);
+    let result: Result<(), AppError> = AppError::network("x", None).retry(1, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Err(AppError::network("x", None))
+    });
+    assert!(result.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn test_exponential_backoff_first_attempt_is_capped() {
     // Attempt 0 used to return the initial delay even when it was
     // larger than the configured maximum.

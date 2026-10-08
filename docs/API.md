@@ -622,7 +622,7 @@ Extension trait implemented for every `ForgeError` type. It needs no manual impl
 | Method | Parameters | Return Type | Description |
 |--------|------------|-------------|-------------|
 | `create_retry_policy()` | `max_retries: usize` | `RetryPolicy` | Exponential retry policy with the given retry limit |
-| `retry()` | `max_retries: usize, operation: F` | `Result<T, E>` | Runs `operation`, retrying errors whose `is_retryable()` is true |
+| `retry()` | `max_retries: usize, operation: F` | `Result<T, E>` | Runs `operation` once if the receiver's `is_retryable()` is false; otherwise retries errors whose `is_retryable()` is true |
 | `create_circuit_breaker()` | `name` | `CircuitBreaker` | Circuit breaker with the default configuration |
 
 ```rust
