@@ -29,7 +29,7 @@ It ships with a built-in `AppError`, a declarative `define_errors!` macro, an op
 
 ```toml
 [dependencies]
-error-forge = "1.0"
+error-forge = "1.0.1"
 ```
 
 MSRV: Rust `1.81`. CI verifies the crate builds on the exact `1.81.0` toolchain.

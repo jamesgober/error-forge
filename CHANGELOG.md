@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-08
+
+Patch release for `error-forge` and `error-forge-derive` (both `1.0.1`). Bug fixes and documentation corrections only; no public item added, removed or renamed (`cargo semver-checks` against `1.0.0`: 222 checks pass).
+
 ### Changed
 
 - `Cargo.lock` refreshed to the latest compatible releases (`serde 1.0.229`, `log 0.4.33`, `async-trait 0.1.91`, `rand 0.8.7`, `serde_json 1.0.151`, `tokio 1.53.0`, `quote 1.0.47`, `proc-macro2 1.0.107`). No `Cargo.toml` requirement changes; the lockfile is not part of the published crate.
@@ -207,7 +211,8 @@ Initial public release with core functionality.
 - Error hook system with severity levels
 - Zero external dependencies design
 
-[Unreleased]: https://github.com/jamesgober/error-forge/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jamesgober/error-forge/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/jamesgober/error-forge/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jamesgober/error-forge/compare/v0.9.8...v1.0.0
 [0.9.8]: https://github.com/jamesgober/error-forge/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/jamesgober/error-forge/compare/0.9.6...v0.9.7
