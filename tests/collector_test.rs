@@ -110,3 +110,11 @@ fn test_fatal_and_retryable_detection() {
     assert!(collector.has_fatal());
     assert!(!collector.all_retryable());
 }
+
+#[test]
+fn test_default_collector_does_not_require_default_errors() {
+    // `AppError` does not implement `Default`; the derived impl used to
+    // require it.
+    let collector: ErrorCollector<AppError> = Default::default();
+    assert!(collector.is_empty());
+}

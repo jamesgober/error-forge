@@ -3,10 +3,18 @@ use std::error::Error;
 use std::fmt;
 
 /// A collection of errors that can be accumulated and returned as a single result
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ErrorCollector<E> {
     /// The collected errors
     errors: Vec<E>,
+}
+
+/// An empty collector. Written by hand so `E` does not have to
+/// implement `Default`, which `#[derive(Default)]` would require.
+impl<E> Default for ErrorCollector<E> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<E> ErrorCollector<E> {

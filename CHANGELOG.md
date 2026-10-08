@@ -33,6 +33,7 @@ Patch release for `error-forge` and `error-forge-derive`. Bug fixes, documentati
 - `#[derive(ModError)]`: `#[error_retryable(false)]`, `#[error_retryable = false]` and the same forms of `#[error_fatal]` evaluate to `false`. Any value used to mean `true`.
 - `#[derive(ModError)]`: fields with raw identifiers (`r#type`) compile, and display strings may name them as `{type}` or `{r#type}`. Width and precision arguments taken from fields (`{value:>width$}`) keep working.
 - `CircuitBreaker` credited the outcome of a slow call admitted while the circuit was closed to the half-open probe: if it finished during the probe, a failure reopened the circuit and a success closed it and let further callers through, breaking the single-probe guarantee. Only the probe now decides how the circuit leaves half-open; outcomes of calls admitted before the circuit tripped, or before `reset`, no longer count.
+- `ErrorCollector::default()` no longer requires `E: Default`; the derived impl added that bound.
 - `docs/STABILITY.md` no longer says `define_errors!` generates `ForgeError` impls; it generates inherent metadata methods.
 
 ## [1.0.1] - 2026-10-08
