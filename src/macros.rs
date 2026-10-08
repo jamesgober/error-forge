@@ -188,30 +188,69 @@ where
         .map_err(|_| "Error hook already registered")
 }
 
-/// Call the registered error hook with error context if one is registered
+thread_local! {
+    /// Set while the registered hook runs on this thread. An error
+    /// created from inside the hook would otherwise call the hook
+    /// again and recurse until the stack overflows.
+    static IN_HOOK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Clears [`IN_HOOK`] when the hook call ends, including by unwinding.
+struct InHookGuard;
+
+impl Drop for InHookGuard {
+    fn drop(&mut self) {
+        IN_HOOK.with(|flag| flag.set(false));
+    }
+}
+
+/// Call the registered error hook with error context if one is registered.
+///
+/// The hook is not re-entered: errors created while the hook runs on the
+/// same thread (for example by a logging sink that fails) do not call it
+/// again. A panic inside the hook is caught here so it does not unwind
+/// through the error constructor that fired it; the process panic hook
+/// still reports it.
 #[doc(hidden)]
 pub fn call_error_hook(caption: &str, kind: &str, is_fatal: bool, is_retryable: bool) {
-    if let Some(hook) = ERROR_HOOK.get() {
-        // Determine error level based on error properties
-        let level = if is_fatal {
-            ErrorLevel::Critical
-        } else if !is_retryable {
-            ErrorLevel::Error
-        } else if kind == "Warning" {
-            ErrorLevel::Warning
-        } else if kind == "Debug" {
-            ErrorLevel::Debug
-        } else {
-            ErrorLevel::Info
-        };
+    let Some(hook) = ERROR_HOOK.get() else {
+        return;
+    };
+    if IN_HOOK.with(|flag| flag.replace(true)) {
+        return;
+    }
+    let _guard = InHookGuard;
 
-        hook(ErrorContext {
-            caption,
-            kind,
-            level,
-            is_fatal,
-            is_retryable,
-        });
+    // Determine error level based on error properties
+    let level = if is_fatal {
+        ErrorLevel::Critical
+    } else if !is_retryable {
+        ErrorLevel::Error
+    } else if kind == "Warning" {
+        ErrorLevel::Warning
+    } else if kind == "Debug" {
+        ErrorLevel::Debug
+    } else {
+        ErrorLevel::Info
+    };
+
+    let context = ErrorContext {
+        caption,
+        kind,
+        level,
+        is_fatal,
+        is_retryable,
+    };
+
+    // `AssertUnwindSafe`: the closure only borrows the shared hook and
+    // `&str`s. Nothing this function owns is left half-updated by an
+    // unwind (the re-entrancy flag is reset by `_guard` either way), and
+    // any state the hook keeps for itself is the hook's own concern, as
+    // it would be if the panic had reached the caller.
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| hook(context)));
+    if let Err(payload) = outcome {
+        // Dropping a payload can itself panic; never let that escape.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || drop(payload)));
     }
 }
 

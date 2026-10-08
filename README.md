@@ -221,6 +221,8 @@ fn main() {
 }
 ```
 
+The hook runs on the thread that created the error. Errors created inside the hook itself (for example by a failing log sink) do not call it again, and a panic inside the hook is caught so it does not unwind through the error constructor.
+
 ### Logging Adapters
 
 - `logging::register_logger(...)` installs a custom logger once.

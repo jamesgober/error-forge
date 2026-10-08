@@ -393,7 +393,9 @@ Available in `error_forge::macros` (and re-exported at the crate root):
 - `ErrorContext`
 - `ErrorLevel`
 
-`call_error_hook(...)` is hidden and used by generated code. Only one hook can be installed per process; `try_register_error_hook(...)` returns an error if a hook was already installed. Every `AppError` and `define_errors!` constructor calls the hook.
+`call_error_hook(...)` is hidden and used by generated code. Only one hook can be installed per process; `try_register_error_hook(...)` returns an error if a hook was already installed. Every `AppError` and `define_errors!` constructor calls the hook, as does `ForgeError::register`.
+
+The hook is not re-entered: an error created while the hook runs on the same thread (for example by a log sink that fails) does not call it again. A panic inside the hook is caught and discarded so it does not unwind through the constructor that fired it; the process panic hook still reports it.
 
 ```rust
 use error_forge::{try_register_error_hook, AppError, ErrorLevel};

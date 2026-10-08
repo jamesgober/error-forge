@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Patch release for `error-forge` and `error-forge-derive`. Bug fixes, documentation corrections and test/CI additions; no public item added, removed or renamed. A few fixes change output or reject input that used to be accepted silently; each is listed under Changed.
 
+### Changed
+
+- The error hook is no longer re-entered: an error created while the hook runs on the same thread (for example by a log sink that fails) does not call it again. A panic inside the hook is caught and discarded instead of unwinding through the `AppError` / `define_errors!` constructor or `ForgeError::register` call that fired it; the process panic hook still reports it.
+
 ### Removed
 
 - The `thiserror` dependency. Nothing in either crate used it and none of its types appear in the public API, so dependents cannot observe the removal; a clean default build is about 57% faster (3.0 s to 1.3 s in a local debug build). `docs/STABILITY.md` and `docs/COMPARISON.md` no longer list it.
