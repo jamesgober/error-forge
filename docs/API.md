@@ -491,8 +491,8 @@ let report = ConsoleTheme::plain().format_error(&error);
 assert!(report.contains("Configuration file not found"));
 assert!(report.contains("Retryable: No"));
 
-// `install_panic_hook()` replaces the process panic hook with one that
-// prints panics through the default theme.
+// `install_panic_hook()` installs a hook that prints panics through the
+// default theme and then runs the hook that was installed before it.
 error_forge::install_panic_hook();
 ```
 

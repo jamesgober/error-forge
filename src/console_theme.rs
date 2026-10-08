@@ -49,14 +49,6 @@ fn terminal_supports_ansi() -> bool {
             return false;
         }
 
-        // Windows Terminal explicitly signals ANSI support.
-        #[cfg(windows)]
-        {
-            if std::env::var_os("WT_SESSION").is_some() {
-                return true;
-            }
-        }
-
         // Default to enabled on every supported platform — modern
         // Windows builds (10.0.10586+) honour ANSI escapes in stderr.
         true
@@ -158,8 +150,10 @@ impl ConsoleTheme {
     /// Format an error display in a structured way.
     ///
     /// Writes the caption, the error's `Display` output, the
-    /// retryability marker, and the optional source chain into a
-    /// single `String` buffer. Allocates exactly once.
+    /// retryability marker, and the error's direct source (if any) into
+    /// one `String`. The colour helpers and `to_string` calls build a
+    /// few short-lived strings along the way, so this allocates several
+    /// times per call; it is meant for reporting, not hot paths.
     pub fn format_error<E: crate::error::ForgeError>(&self, err: &E) -> String {
         use std::fmt::Write as _;
         let mut buf = String::with_capacity(160);
@@ -205,9 +199,25 @@ pub fn print_error<E: crate::error::ForgeError>(err: &E) {
     eprintln!("{}", theme.format_error(err));
 }
 
-/// Install a panic hook that formats panics using the ConsoleTheme
+/// Install a panic hook that formats panics using the ConsoleTheme.
+///
+/// The hook prints a themed `PANIC` caption with the panic message and
+/// location to stderr, then calls the hook that was installed before
+/// it, so an existing crash reporter or logging hook keeps running.
+/// When no custom hook was installed, that previous hook is the
+/// standard library's default, which prints its own panic message
+/// (and the backtrace, when `RUST_BACKTRACE` asks for one) after the
+/// themed lines.
+///
+/// # Example
+///
+/// ```
+/// error_forge::install_panic_hook();
+/// # let _ = std::panic::take_hook();
+/// ```
 pub fn install_panic_hook() {
     let theme = ConsoleTheme::default();
+    let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         let message = match panic_info.payload().downcast_ref::<&str>() {
             Some(s) => *s,
@@ -228,6 +238,8 @@ pub fn install_panic_hook() {
             "{}",
             theme.error(&format!("{} {}", message, theme.dim(&location)))
         );
+
+        previous(panic_info);
     }));
 }
 
