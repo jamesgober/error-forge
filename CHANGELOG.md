@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `ErrorLogger::log_panic` rustdoc no longer implies the crate calls it when a panic hook is registered. It states that nothing calls it automatically and shows how to forward to it from your own panic hook.
 - `error-forge-derive`: `#[derive(ModError)]` on a union now reports a `compile_error!` at the `union` keyword instead of panicking inside the proc macro.
 - `error-forge-derive`: `#[derive(ModError)]` no longer generates code that fails to compile ("argument never used" / "named argument never used") for variants with fields that have no `#[error_display]`, or whose display string does not mention every field. Only the fields the string references are passed to `format!`. Strings that compiled before render the same output.
+- `docs/API.md` examples compile and pass. The file had carried a stale second half since `0.9.7` (starting mid code block) that documented APIs which do not exist (`ErrorMetadata`, `register_url_format`, `with_success_threshold`, async `retry`), listed the removed `thread-safety` feature and `AppError::with_async_context`, and grouped `io::Error` directly. Those sections are replaced by working examples for hooks, logging, context, error codes, collection, backoff, retry, the circuit breaker, `ForgeErrorRecovery` and `AsyncForgeError`. Every `rust` block in the file now runs as a doctest under `cargo test --all-features`.
 
 ## [1.0.0] - 2026-05-18
 

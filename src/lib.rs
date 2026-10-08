@@ -114,6 +114,14 @@ pub mod __private {
 
 // Extension methods are implemented in error.rs
 
+/// Runs every `rust` code block in `docs/API.md` as a doctest so the
+/// narrative reference cannot drift from the API. Several examples use
+/// `#[derive(ModError)]` and `AsyncForgeError`, so this only builds when
+/// both features are on (CI runs `cargo test --all-features`).
+#[cfg(all(doctest, feature = "derive", feature = "async"))]
+#[doc = include_str!("../docs/API.md")]
+pub struct ApiReferenceDoctests;
+
 #[cfg(test)]
 mod tests {
     use crate::ForgeError;

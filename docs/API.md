@@ -14,24 +14,36 @@ Other companions:
 
 This document tracks the public surface that is available today. It intentionally favors accuracy over aspiration.
 
+Every `rust` code block in this file is compiled and run as a doctest
+(`cargo test --all-features`), so the examples track the real API. The
+examples that use `#[derive(ModError)]` or `AsyncForgeError` need the
+`derive` and `async` features.
+
 ## Feature Flags
 
 | Feature | Enables |
 | --- | --- |
 | `derive` | Re-exports `#[derive(ModError)]` from `error-forge-derive` |
 | `async` | `AsyncForgeError`, `AsyncResult`, and async helpers on `AppError` |
-| `serde` | Serialization derives where supported by the concrete error types |
+| `serde` | `Serialize` on `AppError` |
 | `log` | `logging::log_impl` adapter |
 | `tracing` | `logging::tracing_impl` adapter |
-| `thread-safety` | `once_cell`-backed thread-safe support utilities |
+| `jitter` | ±20% jitter in `ExponentialBackoff::with_jitter` (pulls in `rand`) |
+| `console`, `backtrace`, `registry`, `collector`, `context` | Reserved. They currently gate nothing; the related APIs are always available. |
+
+`define_errors!` adds `#[cfg_attr(feature = "serde", derive(serde::Serialize))]`
+to the enums it generates. That `cfg` is evaluated in your crate, so it
+follows your crate's own `serde` feature, not error-forge's.
 
 ## Core Types
 
 ### `ForgeError`
 
-`ForgeError` is the crate’s central trait. It extends `std::error::Error` with stable metadata that is useful in logs, HTTP layers, workers, and recovery policies.
+`ForgeError` is the crate's central trait. It extends `std::error::Error` with stable metadata that is useful in logs, HTTP layers, workers, and recovery policies. Its shape, with the provided default bodies:
 
 ```rust
+use std::backtrace::Backtrace;
+
 pub trait ForgeError: std::error::Error + Send + Sync + 'static {
     fn kind(&self) -> &'static str;
     fn caption(&self) -> &'static str;
@@ -41,8 +53,9 @@ pub trait ForgeError: std::error::Error + Send + Sync + 'static {
     fn exit_code(&self) -> i32 { 1 }
     fn user_message(&self) -> String { self.to_string() }
     fn dev_message(&self) -> String { format!("[{}] {}", self.kind(), self) }
-    fn backtrace(&self) -> Option<&std::backtrace::Backtrace> { None }
-    fn register(&self);
+    fn backtrace(&self) -> Option<&Backtrace> { None }
+    // The real default forwards to the registered error hook.
+    fn register(&self) {}
 }
 ```
 
@@ -79,11 +92,23 @@ Common modifiers:
 - `with_code(...)`
 - `context(...)`
 
-### `Result<T>`
+```rust
+use error_forge::{AppError, ForgeError};
+
+let error = AppError::network("api.example.com", None).with_status(502);
+assert_eq!(error.kind(), "Network");
+assert!(error.is_retryable());
+assert_eq!(error.status_code(), 502);
+```
+
+### `AppResult<T>`
 
 ```rust
-pub type Result<T> = std::result::Result<T, error_forge::error::AppError>;
+pub type AppResult<T> = std::result::Result<T, error_forge::AppError>;
 ```
+
+`error_forge::Result<T>` is a deprecated alias for the same type. It
+shadows `std::result::Result` in `use error_forge::*` glob imports.
 
 ## Declarative Macros
 
@@ -102,33 +127,58 @@ define_errors! {
 
         #[error(display = "Request to {endpoint} failed", endpoint)]
         #[kind(Network, retryable = true, status = 503)]
-        Network { endpoint: String, source: Option<Box<dyn std::error::Error + Send + Sync>> },
+        Network { endpoint: String },
     }
+}
+
+fn main() {
+    let error = ApiError::network("api.example.com".to_string());
+    assert_eq!(error.to_string(), "Request to api.example.com failed");
+    assert_eq!(error.kind(), "Network");
+    assert!(error.is_retryable());
+    assert_eq!(error.status_code(), 503);
 }
 ```
 
 Rules and behavior:
 
 - Each variant requires `#[kind(...)]`.
-- Constructor names are the lowercase form of the variant name.
-- `retryable`, `fatal`, `status`, and `exit` can be supplied inside `#[kind(...)]`.
+- Constructor names are the lowercase form of the variant name (`RequestFailed` becomes `requestfailed`).
+- `retryable`, `fatal`, `status`, `exit`, and `caption` can be supplied inside `#[kind(...)]`.
 - A field named `source` is used for `Error::source()` chaining.
 - For custom `source` field types, implement `error_forge::macros::ErrorSource` in your crate.
 - If `#[error(display = ...)]` is omitted, display falls back to the caption, variant name, and debug-formatted fields.
 
 ### `group!`
 
-`group!` creates a parent error enum with `From<T>` conversions for wrapped source types.
+`group!` creates a parent error enum with `From<T>` conversions for wrapped source types. Every wrapped type must implement `ForgeError`; the generated `ForgeError` impl delegates to the wrapped value. To group a foreign error such as `std::io::Error`, wrap it in your own error type first.
 
 ```rust
-use error_forge::{group, AppError};
-use std::io;
+use error_forge::{group, AppError, ForgeError, ModError};
+
+#[derive(Debug, ModError)]
+#[error_prefix("Storage")]
+pub enum StorageError {
+    #[error_display("Disk full on {0}")]
+    #[error_http_status(507)]
+    DiskFull(String),
+}
 
 group! {
+    #[derive(Debug)]
     pub enum ServiceError {
         App(AppError),
-        Io(io::Error),
+        Storage(StorageError),
     }
+}
+
+fn main() {
+    let error: ServiceError = StorageError::DiskFull("/var".to_string()).into();
+    assert_eq!(error.to_string(), "Disk full on /var");
+    assert_eq!(error.status_code(), 507);
+
+    let error: ServiceError = AppError::config("missing key").into();
+    assert_eq!(error.kind(), "Config");
 }
 ```
 
@@ -149,6 +199,8 @@ Supported attributes:
 - `error_exit_code`
 - `error_fatal`
 
+`error_display` is optional and may mention any subset of the fields: by name for struct-like variants, by position for tuple variants.
+
 Example:
 
 ```rust
@@ -162,6 +214,9 @@ enum DbError {
     #[error_http_status(503)]
     ConnectionFailed(String),
 
+    #[error_display("Query failed: {reason}")]
+    QueryFailed { reason: String, query: String },
+
     #[error_display("Permission denied")]
     #[error_fatal]
     PermissionDenied,
@@ -170,13 +225,21 @@ enum DbError {
 let err = DbError::ConnectionFailed("primary".into());
 assert!(err.is_retryable());
 assert_eq!(err.status_code(), 503);
+assert_eq!(err.caption(), "Database: Error");
+
+let err = DbError::QueryFailed {
+    reason: "timeout".into(),
+    query: "SELECT 1".into(),
+};
+assert_eq!(err.to_string(), "Query failed: timeout");
+assert!(DbError::PermissionDenied.is_fatal());
 ```
 
 ## Context and Wrapping
 
 ### `ContextError<E, C>`
 
-Wraps an error and an arbitrary context value.
+Wraps an error and an arbitrary context value. The `error` and `context` fields are public; the struct is `#[non_exhaustive]`, so build it with `ContextError::new` or the extension methods.
 
 Useful methods:
 
@@ -192,11 +255,34 @@ Extension trait for `Result<T, E>`:
 - `context(value)` eagerly adds context on error
 - `with_context(|| value)` lazily creates context only on error
 
+```rust
+use error_forge::{AppError, ForgeError, ResultExt};
+
+fn load_settings(path: &str) -> Result<String, AppError> {
+    Err(AppError::config(format!("{path} is empty")))
+}
+
+let err = load_settings("app.toml")
+    .with_context(|| "Loading settings".to_string())
+    .unwrap_err();
+
+assert_eq!(err.context, "Loading settings");
+assert_eq!(
+    err.to_string(),
+    "Loading settings: ⚙️ Configuration Error: app.toml is empty"
+);
+// Metadata comes from the wrapped error.
+assert_eq!(err.kind(), "Config");
+
+let outer = err.context("Starting service");
+assert!(outer.to_string().starts_with("Starting service: Loading settings: "));
+```
+
 ## Error Codes and Registry
 
 ### `register_error_code(...)`
 
-Registers a stable code with description, optional documentation URL, and retryability metadata.
+Registers a stable code with description, optional documentation URL, and retryability metadata. Registering the same code twice returns `Err`.
 
 ### `WithErrorCode` and `CodedError<E>`
 
@@ -219,6 +305,32 @@ Status-code resolution order:
 1. explicit instance override
 2. underlying error status code
 
+```rust
+use error_forge::{register_error_code, AppError, ForgeError};
+
+register_error_code(
+    "AUTH-001",
+    "Credentials were rejected",
+    Some("https://docs.example.com/errors/auth-001"),
+    false,
+)
+.expect("code registered once");
+
+let error = AppError::other("bad password").with_code("AUTH-001");
+assert_eq!(error.to_string(), "[AUTH-001] 🚨 Error: bad password");
+assert!(!error.is_retryable());
+assert!(error.dev_message().ends_with("(https://docs.example.com/errors/auth-001)"));
+assert_eq!(error.code_info().unwrap().description, "Credentials were rejected");
+
+// Per-instance overrides win over the registry and the inner error.
+let error = AppError::other("rate limited")
+    .with_code("AUTH-001")
+    .with_retryable(true)
+    .with_status(429);
+assert!(error.is_retryable());
+assert_eq!(error.status_code(), 429);
+```
+
 ## Collection
 
 ### `ErrorCollector<E>`
@@ -235,23 +347,80 @@ Useful methods:
 - `into_result(ok_value)`
 - `result(ok_value)`
 - `try_collect(...)`
+- `errors()`, `into_errors()`
 - `summary()` for `E: ForgeError`
 - `has_fatal()` for `E: ForgeError`
 - `all_retryable()` for `E: ForgeError`
+
+```rust
+use error_forge::{AppError, CollectError, ErrorCollector};
+
+struct Form {
+    username: String,
+    email: String,
+}
+
+fn validate(form: &Form) -> Result<(), ErrorCollector<AppError>> {
+    let mut errors = ErrorCollector::new();
+    if form.username.len() < 3 {
+        errors.push(AppError::other("username is too short"));
+    }
+    if !form.email.contains('@') {
+        errors.push(AppError::other("email is invalid"));
+    }
+    let parsed: Result<u32, AppError> = "42".parse().map_err(|_| AppError::other("bad age"));
+    let _age = parsed.collect_err(&mut errors);
+    errors.into_result(())
+}
+
+let errors = validate(&Form {
+    username: "al".into(),
+    email: "nowhere".into(),
+})
+.unwrap_err();
+assert_eq!(errors.len(), 2);
+assert!(errors.summary().starts_with("2 errors collected (0 fatal, 0 retryable)"));
+```
 
 ## Logging and Hooks
 
 ### Hook API
 
-Available in `error_forge::macros`:
+Available in `error_forge::macros` (and re-exported at the crate root):
 
-- `register_error_hook(...)`
 - `try_register_error_hook(...)`
-- `call_error_hook(...)` for internal/generated use
+- `register_error_hook(...)` (deprecated; ignores a failed registration)
 - `ErrorContext`
 - `ErrorLevel`
 
-`try_register_error_hook(...)` returns an error if a hook was already installed.
+`call_error_hook(...)` is hidden and used by generated code. Only one hook can be installed per process; `try_register_error_hook(...)` returns an error if a hook was already installed. Every `AppError` and `define_errors!` constructor calls the hook.
+
+```rust
+use error_forge::{try_register_error_hook, AppError, ErrorLevel};
+use std::sync::{Arc, Mutex};
+
+let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+let sink = Arc::clone(&seen);
+try_register_error_hook(move |ctx| {
+    let level = match ctx.level {
+        ErrorLevel::Critical => "critical",
+        ErrorLevel::Error => "error",
+        ErrorLevel::Warning => "warning",
+        ErrorLevel::Info => "info",
+        ErrorLevel::Debug => "debug",
+        // `ErrorLevel` is `#[non_exhaustive]`.
+        _ => "other",
+    };
+    sink.lock().unwrap().push(format!("{level}: {}", ctx.kind));
+})
+.expect("first hook in this process");
+
+let _config = AppError::config("missing key");
+let _network = AppError::network("api.example.com", None);
+
+assert_eq!(*seen.lock().unwrap(), ["error: Config", "info: Network"]);
+assert!(try_register_error_hook(|_| {}).is_err());
+```
 
 ### Logging API
 
@@ -268,11 +437,34 @@ Feature-gated adapters:
 - `logging::log_impl::init()` with the `log` feature
 - `logging::tracing_impl::init()` with the `tracing` feature
 
+`ErrorLogger::log_panic` is not called automatically; forward to it from your own panic hook if you want panics logged.
+
+```rust
+use error_forge::logging::custom::ErrorLoggerBuilder;
+use error_forge::{log_error, register_logger, AppError};
+use std::sync::{Arc, Mutex};
+
+let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+let sink = Arc::clone(&lines);
+let logger = ErrorLoggerBuilder::new()
+    .with_error_fn(move |error, level| {
+        sink.lock().unwrap().push(format!("{level:?} {}", error.dev_message()));
+    })
+    .build();
+register_logger(logger).expect("first logger in this process");
+
+log_error(&AppError::config("missing key").with_fatal(true));
+assert_eq!(
+    *lines.lock().unwrap(),
+    ["Critical [Config] ⚙️ Configuration Error: missing key"]
+);
+```
+
 ## Formatting
 
 ### `ConsoleTheme`
 
-Provides console-friendly formatting and panic-hook installation.
+Provides console-friendly formatting and panic-hook installation. `ConsoleTheme::new()` detects colour support (stderr must be a terminal, `TERM` not `dumb`, and `NO_COLOR` unset or empty); `with_colors()` and `plain()` force the choice.
 
 Useful exports:
 
@@ -280,15 +472,57 @@ Useful exports:
 - `print_error(...)`
 - `install_panic_hook()`
 
+```rust
+use error_forge::{print_error, AppError, ConsoleTheme};
+
+let error = AppError::config("Configuration file not found");
+
+// Writes to stderr with the cached default theme.
+print_error(&error);
+
+let report = ConsoleTheme::plain().format_error(&error);
+assert!(report.contains("Configuration file not found"));
+assert!(report.contains("Retryable: No"));
+
+// `install_panic_hook()` replaces the process panic hook with one that
+// prints panics through the default theme.
+error_forge::install_panic_hook();
+```
+
 ## Recovery
 
 The recovery APIs are synchronous.
 
 ### Backoff Strategies
 
-- `ExponentialBackoff`
-- `LinearBackoff`
-- `FixedBackoff`
+- `ExponentialBackoff`: `with_initial_delay`, `with_max_delay`, `with_factor`, `with_jitter`
+- `LinearBackoff`: `with_initial_delay`, `with_increment`, `with_max_delay`
+- `FixedBackoff::new(delay_ms)`
+
+Every strategy implements the `Backoff` trait (`next_delay(attempt)`). Delays never exceed the configured maximum.
+
+```rust
+use error_forge::recovery::{Backoff, ExponentialBackoff, FixedBackoff, LinearBackoff};
+use std::time::Duration;
+
+let exponential = ExponentialBackoff::new()
+    .with_initial_delay(100)
+    .with_max_delay(1_000)
+    .with_factor(2.0);
+assert_eq!(exponential.next_delay(0), Duration::from_millis(100));
+assert_eq!(exponential.next_delay(2), Duration::from_millis(400));
+assert_eq!(exponential.next_delay(10), Duration::from_millis(1_000));
+
+let linear = LinearBackoff::new()
+    .with_initial_delay(100)
+    .with_increment(50)
+    .with_max_delay(300);
+assert_eq!(linear.next_delay(1), Duration::from_millis(150));
+assert_eq!(linear.next_delay(9), Duration::from_millis(300));
+
+let fixed = FixedBackoff::new(200);
+assert_eq!(fixed.next_delay(5), Duration::from_millis(200));
+```
 
 ### Retry
 
@@ -297,10 +531,44 @@ The recovery APIs are synchronous.
 - `RetryPolicy::new_fixed(delay_ms)`
 - `with_max_retries(...)`
 - `executor::<E>()`
-- `forge_executor::<E>()`
+- `forge_executor::<E>()` (retries only errors whose `is_retryable()` is true)
 - `retry(...)`
+- `RetryExecutor::with_retry_if(...)` and `retry_with_handler(...)`
 
 `RetryExecutor` uses blocking sleeps, so it is best suited to sync workloads or dedicated worker threads.
+
+```rust
+use error_forge::recovery::RetryPolicy;
+use error_forge::AppError;
+use std::cell::Cell;
+
+let attempts = Cell::new(0);
+let result = RetryPolicy::new_fixed(1)
+    .with_max_retries(3)
+    .forge_executor::<AppError>()
+    .retry(|| {
+        attempts.set(attempts.get() + 1);
+        if attempts.get() < 3 {
+            // Network errors are retryable by default.
+            Err(AppError::network("api.example.com", None))
+        } else {
+            Ok("response")
+        }
+    });
+assert_eq!(result.unwrap(), "response");
+assert_eq!(attempts.get(), 3);
+
+// Config errors are not retryable, so they fail on the first attempt.
+let attempts = Cell::new(0);
+let result: Result<(), AppError> = RetryPolicy::new_fixed(1)
+    .forge_executor()
+    .retry(|| {
+        attempts.set(attempts.get() + 1);
+        Err(AppError::config("bad key"))
+    });
+assert!(result.is_err());
+assert_eq!(attempts.get(), 1);
+```
 
 ### Circuit Breaker
 
@@ -309,12 +577,60 @@ The recovery APIs are synchronous.
 - `execute(...)`
 - `state()`
 - `reset()`
+- `CircuitBreakerConfig::new(threshold, window_ms, reset_ms)` or `CircuitBreakerConfig::default()` with `with_failure_threshold`, `with_failure_window_ms`, `with_reset_timeout_ms`
 
 States:
 
-- `Closed`
-- `Open`
-- `HalfOpen`
+- `Closed`: calls pass through and failures are counted inside the window
+- `Open`: calls fail fast with `CircuitOpenError`
+- `HalfOpen`: the reset timeout has elapsed; one probe call is admitted and others fail fast until it resolves
+
+```rust
+use error_forge::recovery::{CircuitBreaker, CircuitBreakerConfig, CircuitOpenError, CircuitState};
+use error_forge::AppError;
+
+let config = CircuitBreakerConfig::default()
+    .with_failure_threshold(2)
+    .with_reset_timeout_ms(30_000);
+let breaker = CircuitBreaker::with_config("inventory", config);
+
+for _ in 0..2 {
+    let result = breaker.execute(|| Err::<(), _>(AppError::network("inventory", None)));
+    assert!(result.is_err());
+}
+assert_eq!(breaker.state(), CircuitState::Open);
+
+// While open, calls fail fast without running the closure.
+let err = breaker.execute(|| Ok::<_, AppError>("unreachable")).unwrap_err();
+assert!(err.is::<CircuitOpenError>());
+
+breaker.reset();
+assert_eq!(breaker.state(), CircuitState::Closed);
+```
+
+### `ForgeErrorRecovery`
+
+Extension trait implemented for every `ForgeError` type. It needs no manual impl.
+
+| Method | Parameters | Return Type | Description |
+|--------|------------|-------------|-------------|
+| `create_retry_policy()` | `max_retries: usize` | `RetryPolicy` | Exponential retry policy with the given retry limit |
+| `retry()` | `max_retries: usize, operation: F` | `Result<T, E>` | Runs `operation`, retrying errors whose `is_retryable()` is true |
+| `create_circuit_breaker()` | `name` | `CircuitBreaker` | Circuit breaker with the default configuration |
+
+```rust
+use error_forge::recovery::ForgeErrorRecovery;
+use error_forge::AppError;
+
+let template = AppError::network("api.example.com", None);
+let policy = template.create_retry_policy(2);
+
+let result: Result<u8, AppError> = policy.retry(|| Ok(7));
+assert_eq!(result.unwrap(), 7);
+
+let breaker = template.create_circuit_breaker("api");
+assert_eq!(breaker.name(), "api");
+```
 
 ## Async Support
 
@@ -322,9 +638,15 @@ Enabled with the `async` feature.
 
 ### `AsyncForgeError`
 
+The trait mirrors `ForgeError` and adds an async hook:
+
 ```rust
+use async_trait::async_trait;
+use std::backtrace::Backtrace;
+use std::error::Error;
+
 #[async_trait]
-pub trait AsyncForgeError: std::error::Error + Send + Sync + 'static {
+pub trait AsyncForgeError: Error + Send + Sync + 'static {
     fn kind(&self) -> &'static str;
     fn caption(&self) -> &'static str;
     fn is_retryable(&self) -> bool { false }
@@ -333,9 +655,10 @@ pub trait AsyncForgeError: std::error::Error + Send + Sync + 'static {
     fn exit_code(&self) -> i32 { 1 }
     fn user_message(&self) -> String { self.to_string() }
     fn dev_message(&self) -> String { format!("[{}] {}", self.kind(), self) }
-    fn backtrace(&self) -> Option<&std::backtrace::Backtrace> { None }
-    async fn async_handle(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    fn register(&self);
+    fn backtrace(&self) -> Option<&Backtrace> { None }
+    async fn async_handle(&self) -> Result<(), Box<dyn Error + Send + Sync>> { Ok(()) }
+    // The real default forwards to the registered error hook.
+    fn register(&self) {}
 }
 ```
 
@@ -344,787 +667,50 @@ Additional async exports:
 - `AsyncResult<T, E>`
 - `AppError::from_async_result(...)`
 - `AppError::handle_async()`
-- `AppError::with_async_context(...)`
+
+```rust
+use async_trait::async_trait;
+use error_forge::{AppError, AsyncForgeError};
+use std::error::Error;
+use std::fmt;
+
+#[derive(Debug)]
+struct UploadError(String);
+
+impl fmt::Display for UploadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "upload failed: {}", self.0)
+    }
+}
+
+impl Error for UploadError {}
+
+#[async_trait]
+impl AsyncForgeError for UploadError {
+    fn kind(&self) -> &'static str { "Upload" }
+    fn caption(&self) -> &'static str { "Upload Error" }
+    fn is_retryable(&self) -> bool { true }
+
+    async fn async_handle(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Flush telemetry, release resources, and so on.
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let error = UploadError("bucket offline".into());
+    assert!(error.is_retryable());
+    assert!(error.async_handle().await.is_ok());
+
+    let io: Result<(), std::io::Error> = Err(std::io::Error::other("timed out"));
+    let wrapped = AppError::from_async_result(io).await.unwrap_err();
+    assert!(wrapped.to_string().contains("timed out"));
+}
+```
 
 ## Stability Notes
 
 - The crate is cross-platform and tested on Windows-friendly paths and outputs.
 - Public examples are kept aligned with `cargo test --all-features` and strict Clippy.
 - Recovery helpers are sync-first by design; async runtimes should wrap those patterns intentionally rather than rely on hidden blocking behavior.
-    
-    // Or with custom theming
-    let theme = ConsoleTheme::new();
-    println!("{}", theme.format_error(&error));
-    
-    // Using individual theme methods
-    println!("{}", theme.error("This is an error"));
-    println!("{}", theme.warning("This is a warning"));
-}
-```
-
-### Error Hooks
-
-Error Forge provides a centralized error hook mechanism to perform actions when errors are created, with support for different error levels and contexts.
-
-**Types:**
-
-| Type | Description |
-|------|-------------|
-| `ErrorLevel` | Enum representing error severity levels: `Info`, `Warning`, `Error`, `Critical` |
-| `ErrorContext` | Struct containing error context: `caption`, `kind`, `level`, `is_fatal`, `is_retryable` |
-
-**Functions:**
-
-| Function | Parameters | Description |
-|----------|------------|-------------|
-| `register_error_hook()` | `callback: fn(ErrorContext)` | Register a callback function to be called when errors are created |
-
-**Example:**
-```rust
-use error_forge::{AppError, macros::{register_error_hook, ErrorLevel, ErrorContext}};
-use log::{info, warn, error, critical};
-
-fn main() {
-    // Register a hook that maps error levels to your logging system
-    register_error_hook(|ctx| {
-        // Map to appropriate log levels
-        match ctx.level {
-            ErrorLevel::Info => info!("{} [{}]", ctx.caption, ctx.kind),
-            ErrorLevel::Warning => warn!("{} [{}]", ctx.caption, ctx.kind),
-            ErrorLevel::Error => error!("{} [{}]", ctx.caption, ctx.kind),
-            ErrorLevel::Critical => {
-                critical!("{} [{}]", ctx.caption, ctx.kind);
-                // Send alerts for critical errors
-                if ctx.is_fatal {
-                    send_alert("CRITICAL ERROR", ctx.caption);
-                }
-            }
-        }
-    });
-    
-    // These will trigger the hook with different levels
-    let _config_error = AppError::config("Missing configuration"); // Error level
-    let _network_error = AppError::network("api.example.com", None); // Error or Warning level
-}
-
-fn send_alert(level: &str, message: &str) {
-    // Send notifications via email, SMS, or monitoring service
-    println!("ALERT SENT: {} - {}", level, message);
-}
-```
-
-### Panic Hook
-
-Error Forge provides a customizable panic hook that formats panics using the `ConsoleTheme`.
-
-**Functions:**
-
-| Function | Parameters | Description |
-|----------|------------|-------------|
-| `install_panic_hook()` | None | Installs a panic hook that formats panics using the ConsoleTheme |
-
-**Example:**
-```rust
-use error_forge::console_theme::install_panic_hook;
-
-fn main() {
-    // Install the custom panic hook
-    install_panic_hook();
-    
-    // This panic will be formatted with the ConsoleTheme
-    panic!("Something went terribly wrong!");
-}
-```
-
-<br>
-
-## Structured Context
-
-Error Forge provides structured context support for wrapping errors with additional information.
-
-### ContextError
-
-`ContextError` is a wrapper type that adds context information to any error type.
-
-**Signature:**
-```rust
-pub struct ContextError<E> {
-    context: String,
-    source: E,
-}
-```
-
-**Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `new()` | `source: E, context: String` | `ContextError<E>` | Creates a new context error wrapping the source error |
-| `context()` | None | `&str` | Returns the context message |
-| `source()` | None | `&E` | Returns a reference to the source error |
-| `into_source()` | None | `E` | Consumes the context error and returns the source error |
-
-### Context Methods
-
-Error Forge extends `Result` with context methods for easy error wrapping.
-
-**Extension Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `context()` | `context: &str` | `Result<T, ContextError<E>>` | Wraps the error with context |
-| `with_context()` | `f: FnOnce() -> C` | `Result<T, ContextError<E>>` | Wraps the error with lazily evaluated context |
-
-**Example:**
-```rust
-use error_forge::{define_errors, context::ContextError};
-use std::fs::File;
-use std::io::Read;
-
-define_errors! {
-    pub enum FileError {
-        #[error(display = "Failed to open file")]
-        OpenFailed,
-        
-        #[error(display = "Failed to read file")]
-        ReadFailed,
-    }
-}
-
-fn read_config() -> Result<String, ContextError<FileError>> {
-    // Add context to the error
-    let mut file = File::open("config.json")
-        .map_err(|_| FileError::OpenFailed)
-        .context("Opening configuration file")?;
-        
-    // Add context with a closure for dynamic messages
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .map_err(|_| FileError::ReadFailed)
-        .with_context(|| format!("Reading {} bytes from config", file.metadata().map_or(0, |m| m.len())))?;
-        
-    Ok(contents)
-}
-```
-
-<br>
-
-## Error Registry
-
-Error Forge provides a central registry for errors with support for error codes and documentation URLs.
-
-### ErrorRegistry
-
-`ErrorRegistry` is a global registry for tracking error types and their metadata.
-
-**Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `register()` | `kind: &str, metadata: ErrorMetadata` | `()` | Registers an error with its metadata |
-| `get()` | `kind: &str` | `Option<&ErrorMetadata>` | Gets metadata for an error kind |
-| `register_url_format()` | `format: String` | `()` | Sets the URL format for documentation links |
-
-### Error Codes
-
-Error Forge supports numeric error codes for errors registered in the `ErrorRegistry`.
-
-**Example:**
-```rust
-use error_forge::{define_errors, registry::{ErrorRegistry, ErrorMetadata}};
-
-// Configure the error registry
-fn configure_registry() {
-    // Set URL format for documentation links
-    ErrorRegistry::register_url_format("https://example.com/errors/{code}".to_string());
-    
-    // Register errors with codes and categories
-    ErrorRegistry::register("Config", ErrorMetadata {
-        code: 1001,
-        category: "configuration",
-        description: "Configuration-related errors",
-    });
-    
-    ErrorRegistry::register("Database", ErrorMetadata {
-        code: 2001,
-        category: "database",
-        description: "Database access and query errors",
-    });
-}
-
-// Define errors that will use the registry
-define_errors! {
-    pub enum AppError {
-        #[error(display = "Configuration error: {message}")]
-        Config { message: String },
-        
-        #[error(display = "Database error: {message}")]
-        Database { message: String },
-    }
-}
-
-fn example() {
-    configure_registry();
-    
-    let error = AppError::config("Missing database URL");
-    
-    // Get the error code from the registry
-    if let Some(metadata) = ErrorRegistry::get(error.kind()) {
-        println!("Error code: {}", metadata.code);  // 1001
-        println!("Category: {}", metadata.category);  // "configuration"
-        println!("Documentation: {}", metadata.documentation_url());  // https://example.com/errors/1001
-    }
-}
-```
-
-<br>
-
-## Error Collection
-
-Error Forge provides a system for collecting multiple non-fatal errors instead of returning on the first error.
-
-### ErrorCollector
-
-`ErrorCollector` accumulates errors during processing for batch handling.
-
-**Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `new()` | None | `ErrorCollector<E>` | Creates a new empty error collector |
-| `push()` | `error: E` | `()` | Adds an error to the collection |
-| `errors()` | None | `&[E]` | Returns a slice of all collected errors |
-| `is_empty()` | None | `bool` | Returns true if no errors have been collected |
-| `into_result()` | None | `Result<(), E>` | Returns Ok if no errors, or Err with the first error |
-| `into_error()` | None | `Option<E>` | Consumes the collector and returns the first error if any |
-
-**Example:**
-```rust
-use error_forge::{define_errors, collector::ErrorCollector};
-
-define_errors! {
-    pub enum ValidationError {
-        #[error(display = "Field '{}' is required", field)]
-        Required { field: String },
-        
-        #[error(display = "Value '{}' for field '{}' is invalid", value, field)]
-        InvalidValue { field: String, value: String },
-    }
-}
-
-struct Form {
-    username: String,
-    email: String,
-    age: Option<u32>,
-}
-
-fn validate_form(form: &Form) -> Result<(), ValidationError> {
-    let mut collector = ErrorCollector::new();
-    
-    // Validate username
-    if form.username.is_empty() {
-        collector.push(ValidationError::required("username"));
-    } else if form.username.len() < 3 {
-        collector.push(ValidationError::invalid_value("username", &form.username));
-    }
-    
-    // Validate email
-    if form.email.is_empty() {
-        collector.push(ValidationError::required("email"));
-    } else if !form.email.contains('@') {
-        collector.push(ValidationError::invalid_value("email", &form.email));
-    }
-    
-    // Return all collected errors at once
-    collector.into_result()
-}
-```
-
-## Error Recovery
-
-Error Forge provides resilience patterns for handling errors in production systems, including retry policies with various backoff strategies and circuit breakers to prevent cascading failures.
-
-### Backoff Strategies
-
-Backoff strategies determine how long to wait between retry attempts.
-
-**Backoff Trait:**
-
-```rust
-pub trait Backoff: Send + Sync + 'static {
-    fn next_delay(&self, attempt: usize) -> Duration;
-}
-```
-
-**Available Implementations:**
-
-| Strategy | Description |
-|----------|-------------|
-| `ExponentialBackoff` | Increases delay exponentially based on attempt number with optional jitter |
-| `LinearBackoff` | Increases delay linearly based on attempt number with optional jitter |
-| `FixedBackoff` | Uses a constant delay between retry attempts with optional jitter |
-
-**Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `with_initial_delay()` | `delay_ms: u64` | `Self` | Sets the initial delay in milliseconds |
-| `with_max_delay()` | `max_delay_ms: u64` | `Self` | Sets the maximum delay in milliseconds |
-| `with_factor()` | `factor: f64` | `Self` | Sets the multiplication factor (for exponential/linear) |
-| `with_jitter()` | `jitter: f64` | `Self` | Sets jitter factor (0.0-1.0) to randomize delays |
-
-**Example:**
-```rust
-use error_forge::recovery::{ExponentialBackoff, LinearBackoff, FixedBackoff, Backoff};
-use std::time::Duration;
-
-// Exponential backoff: 100ms, 200ms, 400ms, 800ms, ...
-let exp_backoff = ExponentialBackoff::new()
-    .with_initial_delay(100)
-    .with_max_delay(10000)
-    .with_factor(2.0)
-    .with_jitter(0.1);
-
-// Linear backoff: 100ms, 200ms, 300ms, 400ms, ...
-let linear_backoff = LinearBackoff::new()
-    .with_initial_delay(100)
-    .with_max_delay(5000)
-    .with_factor(100)
-    .with_jitter(0.05);
-
-// Fixed backoff: 200ms, 200ms, 200ms, ...
-let fixed_backoff = FixedBackoff::new()
-    .with_delay(200)
-    .with_jitter(0.1);
-
-// Using the backoff strategies
-let delay1 = exp_backoff.next_delay(0);  // ~100ms (with jitter)
-let delay2 = exp_backoff.next_delay(1);  // ~200ms (with jitter)
-let delay3 = exp_backoff.next_delay(2);  // ~400ms (with jitter)
-```
-
-### Circuit Breaker
-
-Circuit Breaker prevents repeated calls to failing operations and allows the system to recover.
-
-**States:**
-
-| State | Description |
-|-------|-------------|
-| `Closed` | Normal operation, calls pass through |
-| `Open` | Circuit is tripped, calls fail fast |
-| `HalfOpen` | Testing if the system has recovered |
-
-**Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `new()` | `config: CircuitBreakerConfig` | `CircuitBreaker` | Creates a new circuit breaker with configuration |
-| `execute()` | `operation: F` | `Result<T, E>` | Executes an operation through the circuit breaker |
-| `state()` | None | `CircuitState` | Returns the current state of the circuit breaker |
-| `reset()` | None | `()` | Resets the circuit breaker to the closed state |
-
-**CircuitBreakerConfig:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `default()` | None | `CircuitBreakerConfig` | Creates a default configuration |
-| `with_failure_threshold()` | `threshold: u32` | `Self` | Number of failures before opening |
-| `with_success_threshold()` | `threshold: u32` | `Self` | Number of successes in half-open before closing |
-| `with_reset_timeout()` | `timeout: Duration` | `Self` | Time before transitioning from open to half-open |
-
-**Example:**
-```rust
-use error_forge::recovery::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
-use std::time::Duration;
-
-// Create a circuit breaker configuration
-let config = CircuitBreakerConfig::default()
-    .with_failure_threshold(3)   // Open after 3 consecutive failures
-    .with_success_threshold(2)   // Close after 2 consecutive successes in half-open
-    .with_reset_timeout(Duration::from_secs(30));  // Try again after 30 seconds
-
-// Create a circuit breaker
-let circuit_breaker = CircuitBreaker::new(config);
-
-// Execute an operation through the circuit breaker
-let result = circuit_breaker.execute(|| {
-    // Operation that might fail
-    database_operation()
-});
-
-// Check the current state
-if circuit_breaker.state() == CircuitState::Open {
-    println!("Circuit is open, service is unavailable");
-}
-```
-
-### Retry Policy
-
-Retry Policy combines predicate logic with backoff strategies for controlled retries.
-
-**Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `new_exponential()` | None | `RetryPolicy` | Creates a new policy with exponential backoff |
-| `new_linear()` | None | `RetryPolicy` | Creates a new policy with linear backoff |
-| `new_fixed()` | None | `RetryPolicy` | Creates a new policy with fixed backoff |
-| `with_max_retries()` | `max_retries: usize` | `Self` | Sets the maximum number of retry attempts |
-| `with_initial_delay()` | `delay_ms: u64` | `Self` | Sets the initial delay in milliseconds |
-| `with_max_delay()` | `delay_ms: u64` | `Self` | Sets the maximum delay in milliseconds |
-| `with_jitter()` | `jitter: f64` | `Self` | Sets jitter factor (0.0-1.0) to randomize delays |
-| `with_predicate()` | `predicate: P` | `Self` | Sets a retry predicate function |
-| `forge_executor()` | None | `RetryExecutor<E>` | Gets an executor to run operations with this policy |
-
-**RetryExecutor:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `retry()` | `operation: F` | `Result<T, E>` | Runs an operation with retries based on the policy |
-
-**Example:**
-```rust
-use error_forge::recovery::RetryPolicy;
-use std::{thread, time::Duration};
-
-// Create a retry policy with exponential backoff
-let retry_policy = RetryPolicy::new_exponential()
-    .with_max_retries(3)
-    .with_initial_delay(100)
-    .with_max_delay(5000)
-    .with_jitter(0.1)
-    .with_predicate(|err: &MyError| err.is_retryable());
-
-// Execute an operation with retries
-let result = retry_policy.forge_executor().retry(|| {
-    // Operation that might fail
-    make_http_request("https://api.example.com")
-});
-
-// For async operations
-let result = async {
-    retry_policy.forge_executor().retry(|| async {
-        make_async_http_request("https://api.example.com").await
-    }).await
-}.await;
-```
-
-### ForgeErrorRecovery
-
-Extension trait that adds recovery capabilities to `ForgeError` types.
-
-**Methods:**
-
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `create_retry_policy()` | `max_retries: usize` | `RetryPolicy` | Creates a retry policy optimized for this error type |
-| `retry()` | `max_retries: usize, operation: F` | `Result<T, E>` | Executes a fallible operation with retries |
-
-**Example:**
-```rust
-use error_forge::{define_errors, recovery::ForgeErrorRecovery};
-
-define_errors! {
-    pub enum ServiceError {
-        #[error(display = "Request failed: {}", message)]
-        #[kind(Request, retryable = true, status = 500)]
-        RequestFailed { message: String },
-        
-        #[error(display = "Timeout: {}", message)]
-        #[kind(Timeout, retryable = true, status = 504)]
-        Timeout { message: String },
-    }
-}
-
-// Implement the recovery trait
-impl ForgeErrorRecovery for ServiceError {}
-
-// Using the retry capabilities
-fn make_request_with_retry() -> Result<String, ServiceError> {
-    // Create a dummy error to use its retry method
-    let error_template = ServiceError::request_failed("Template");
-    
-    // Retry the operation up to 3 times
-    error_template.retry(3, || {
-        match make_service_call() {
-            Ok(response) => Ok(response),
-            Err(e) => Err(ServiceError::request_failed(e.to_string()))
-        }
-    })
-}
-
-fn make_service_call() -> Result<String, std::io::Error> {
-    // Simulated service call
-    Ok("Response data".to_string())
-}
-```
-
-<br>
-
-## Async Support
-
-Error Forge provides comprehensive support for asynchronous error handling in async Rust applications.
-
-### Async Error Handling
-
-The async error handling system is built around the `AsyncForgeError` trait (which extends `ForgeError`) and integrates with the `async-trait` crate for seamless async/await support.
-
-**Core Components:**
-
-| Component | Description |
-|-----------|-------------|
-| `AsyncForgeError` trait | Base trait for async error handling |
-| `from_async_result` method | Converts async results to error types |
-| `async_handle` method | Processes errors in an async context |
-
-**Implementing AsyncForgeError:**
-
-```rust
-use error_forge::{define_errors, AsyncForgeError};
-use async_trait::async_trait;
-
-define_errors! {
-    pub enum AsyncError {
-        #[error(display = "Database error: {}", message)]
-        #[kind(Database, retryable = true, status = 503)]
-        DbError { message: String },
-    }
-}
-
-// The AsyncForgeError implementation is automatically generated when
-// you use define_errors! with async enabled in your features
-#[async_trait]
-impl AsyncForgeError for AsyncError {}
-```
-
-### Async Utilities
-
-Error Forge provides utilities specifically designed for async contexts.
-
-**Key Async Functions:**
-
-| Function | Description |
-|----------|-------------|
-| `async_handle` | Processes errors in an async context with a handler function |
-| `from_async_result` | Converts an async Result into your error type |
-
-**Working with Async Results:**
-
-```rust
-use error_forge::{define_errors, AsyncForgeError};
-use async_trait::async_trait;
-
-define_errors! {
-    pub enum ApiError {
-        #[error(display = "API request failed: {}", message)]
-        #[kind(Api, retryable = true, status = 502)]
-        RequestFailed { message: String },
-    }
-}
-
-#[async_trait]
-impl AsyncForgeError for ApiError {}
-
-async fn fetch_external_data() -> Result<String, reqwest::Error> {
-    // External API call that returns a Result
-    reqwest::get("https://api.example.com/data").await?.text().await
-}
-
-async fn process_data() -> Result<String, ApiError> {
-    // Convert external error type to our ApiError
-    let data = ApiError::from_async_result(fetch_external_data().await)
-        .await?
-        .trim()
-        .to_string();
-    
-    Ok(data)
-}
-```
-
-**Combining with Recovery Patterns:**
-
-```rust
-use error_forge::{define_errors, AsyncForgeError, recovery::ForgeErrorRecovery};
-use async_trait::async_trait;
-
-define_errors! {
-    pub enum NetworkError {
-        #[error(display = "Connection failed: {}", message)]
-        #[kind(Connection, retryable = true, status = 503)]
-        ConnectionFailed { message: String },
-    }
-}
-
-#[async_trait]
-impl AsyncForgeError for NetworkError {}
-impl ForgeErrorRecovery for NetworkError {}
-
-async fn fetch_with_retry() -> Result<String, NetworkError> {
-    // Create retry policy with exponential backoff
-    let retry_policy = NetworkError::connection_failed("dummy")
-        .create_retry_policy(3)
-        .with_initial_delay(100)
-        .with_max_delay(2000)
-        .with_jitter(0.2);
-    
-    // Use retry policy with async operation
-    retry_policy.forge_executor()
-        .retry(|| async {
-            match make_request().await {
-                Ok(data) => Ok(data),
-                Err(e) => Err(NetworkError::connection_failed(e.to_string()))
-            }
-        })
-        .await
-}
-
-async fn make_request() -> Result<String, std::io::Error> {
-    // Simulated async network request
-    Ok("Response data".to_string())
-}
-```
-
-<br>
-
-## Examples
-
-### Basic Error Definition
-
-```rust
-use error_forge::{define_errors, ForgeError};
-
-// Define our error type
-define_errors! {
-    #[derive(Debug)]
-    pub enum AppError {
-        #[error(display = "Configuration error: {message}")]
-        #[kind(Config, retryable = false, status = 500)]
-        Config { message: String },
-        
-        #[error(display = "Database error: {message}")]
-        #[kind(Database, retryable = true, status = 503)]
-        Database { message: String },
-    }
-}
-
-// Use the error type
-fn main() -> Result<(), AppError> {
-    if true {
-        return Err(AppError::config("Missing configuration"));
-    }
-    Ok(())
-}
-```
-
-### Error Groups
-
-```rust
-use error_forge::{group, AppError};
-use std::io;
-
-// Define module-specific error types
-#[derive(Debug, thiserror::Error)]
-pub enum ModuleError {
-    #[error("Operation failed: {0}")]
-    Failed(String),
-}
-
-// Group errors into a parent type
-group! {
-    #[derive(Debug)]
-    pub enum ServiceError {
-        App(AppError),
-        Io(io::Error),
-        Module(ModuleError)
-    }
-}
-
-// Now you can use all error types with automatic conversions
-fn example() -> Result<(), ServiceError> {
-    let result = std::fs::read_to_string("config.toml")
-        .map_err(ServiceError::from)?;  // io::Error -> ServiceError
-        
-    if result.is_empty() {
-        return Err(AppError::config("Empty config file").into());  // AppError -> ServiceError
-    }
-    
-    Ok(())
-}
-```
-
-### Derive Macro Usage
-
-```rust
-use error_forge::ModError;
-
-#[derive(Debug, ModError)]
-#[error_prefix("API")]
-pub enum ApiError {
-    #[error_display("Request to {0} failed with status {1}")]
-    RequestFailed(String, u16),
-    
-    #[error_display("Rate limit exceeded")]
-    #[error_http_status(429)]
-    #[error_retryable]
-    RateLimited,
-    
-    #[error_display("Authentication failed: {reason}")]
-    AuthFailed { reason: String },
-}
-
-// Use the error type with automatically implemented methods
-fn example() {
-    let error = ApiError::RequestFailed("https://api.example.com".to_string(), 404);
-    
-    println!("Error: {}", error);  // "API: Request to https://api.example.com failed with status 404"
-    println!("Kind: {}", error.kind());  // "RequestFailed"
-    println!("Retryable: {}", error.is_retryable());  // false
-    
-    let rate_error = ApiError::RateLimited;
-    println!("Retryable: {}", rate_error.is_retryable());  // true
-    println!("Status: {}", rate_error.status_code());  // 429
-}
-```
-
-### Formatted Error Output
-
-```rust
-use error_forge::{AppError, console_theme::{ConsoleTheme, print_error}};
-
-fn main() {
-    // Create an error
-    let error = AppError::config("Configuration file not found");
-    
-    // Print with default formatting
-    print_error(&error);
-    
-    // Or with custom theme
-    let theme = ConsoleTheme::new();
-    println!("{}", theme.format_error(&error));
-}
-```
-
-### Using Error Hooks
-
-```rust
-use error_forge::{AppError, macros::register_error_hook};
-use std::fs::OpenOptions;
-use std::io::Write;
-
-fn main() {
-    // Setup a hook that logs errors to a file
-    register_error_hook(|message| {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("error_log.txt")
-            .unwrap();
-            
-        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        let _ = writeln!(file, "[{}] {}", timestamp, message);
-    });
-    
-    // This will trigger the hook and log to the file
-    let _error = AppError::config("Missing database connection string");
-}
-```
