@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-08
+
+Patch release for `error-forge` and `error-forge-derive` (both `1.0.2`). Bug fixes, hygiene and build-time improvements; no public item added, removed or renamed (`cargo semver-checks` against `1.0.1`: 222 checks pass). Some inputs that compiled but silently produced wrong output are now compile errors; see **Changed**.
+
 Patch release for `error-forge` and `error-forge-derive`. Bug fixes, documentation corrections and test/CI additions; no public item added, removed or renamed. A few fixes change output or reject input that used to be accepted silently; each is listed under Changed.
 
 ### Changed
@@ -250,7 +254,8 @@ Initial public release with core functionality.
 - Error hook system with severity levels
 - Zero external dependencies design
 
-[Unreleased]: https://github.com/jamesgober/error-forge/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/jamesgober/error-forge/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/jamesgober/error-forge/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jamesgober/error-forge/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jamesgober/error-forge/compare/v0.9.8...v1.0.0
 [0.9.8]: https://github.com/jamesgober/error-forge/compare/v0.9.7...v0.9.8
