@@ -31,6 +31,11 @@ use syn::{parse_macro_input, Data, DeriveInput, Fields};
 /// }
 /// ```
 ///
+/// `#[error_display("...")]` is optional; without it a variant displays
+/// as its name. The string may reference any subset of the variant's
+/// fields: by name for struct-like variants, by position (`{0}`, `{}`)
+/// for tuple variants. Fields it does not mention are ignored.
+///
 /// Note: This is a procedural macro that is re-exported by the `error-forge` crate.
 /// When using in your application, import it from the main crate with `use error_forge::ModError;`.
 #[proc_macro_derive(
@@ -50,25 +55,123 @@ pub fn derive_mod_error(input: TokenStream) -> TokenStream {
     // Parse the input
     let input = parse_macro_input!(input as DeriveInput);
 
+    // Return the generated implementation
+    TokenStream::from(expand(&input))
+}
+
+/// Expand `#[derive(ModError)]` for a parsed item.
+///
+/// Unsupported input (a union) produces a `compile_error!` pointing at
+/// the item instead of panicking inside the compiler.
+fn expand(input: &DeriveInput) -> proc_macro2::TokenStream {
     // Check if this is an enum or struct
     let is_enum = match &input.data {
         Data::Enum(_) => true,
         Data::Struct(_) => false,
-        Data::Union(_) => panic!("ModError cannot be derived for unions"),
+        Data::Union(data) => {
+            return syn::Error::new_spanned(
+                data.union_token,
+                "ModError cannot be derived for unions; use an enum or a struct",
+            )
+            .to_compile_error();
+        }
     };
 
     // Get the error prefix from attributes
     let error_prefix = get_error_prefix(&input.attrs);
 
     // Generate implementation based on whether it's an enum or struct
-    let implementation = if is_enum {
-        implement_for_enum(&input, &error_prefix)
+    if is_enum {
+        implement_for_enum(input, &error_prefix)
     } else {
-        implement_for_struct(&input, &error_prefix)
-    };
+        implement_for_struct(input, &error_prefix)
+    }
+}
 
-    // Return the generated implementation
-    TokenStream::from(implementation)
+/// Rewrite a display format so it only needs the fields it mentions.
+///
+/// `positional` lists the binding names in field order: the field names
+/// of a struct-like variant, or `_0`, `_1`, ... for a tuple variant.
+/// Positional placeholders (`{}`, `{0}`, `{0:?}`) are rewritten to those
+/// names, so the generated `format!` can pass exactly the referenced
+/// fields as named arguments. Passing every field used to fail with
+/// "argument never used" whenever the string skipped one, including the
+/// default display (the bare variant name) on variants with fields.
+///
+/// Returns the rewritten string and the referenced bindings in first-use
+/// order, or `None` for strings this does not handle (width or precision
+/// taken from an argument, malformed braces, out-of-range indices); the
+/// caller then falls back to passing every field.
+fn rewrite_format(fmt: &str, positional: &[String]) -> Option<(String, Vec<String>)> {
+    let mut out = String::with_capacity(fmt.len());
+    let mut used: Vec<String> = Vec::new();
+    let mut next_implicit = 0usize;
+    let mut chars = fmt.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+                out.push_str("{{");
+            }
+            '{' => {
+                let mut inner = String::new();
+                loop {
+                    match chars.next() {
+                        Some('}') => break,
+                        Some('{') | None => return None,
+                        Some(ch) => inner.push(ch),
+                    }
+                }
+                let (arg, spec) = match inner.find(':') {
+                    Some(i) => (&inner[..i], Some(&inner[i + 1..])),
+                    None => (inner.as_str(), None),
+                };
+                if spec.is_some_and(|spec| spec.contains('$') || spec.contains('*')) {
+                    return None;
+                }
+                let name = if arg.is_empty() {
+                    let name = positional.get(next_implicit)?.clone();
+                    next_implicit += 1;
+                    name
+                } else if arg.bytes().all(|b| b.is_ascii_digit()) {
+                    positional.get(arg.parse::<usize>().ok()?)?.clone()
+                } else if is_plain_ident(arg) {
+                    arg.to_string()
+                } else {
+                    return None;
+                };
+                if positional.contains(&name) && !used.contains(&name) {
+                    used.push(name.clone());
+                }
+                out.push('{');
+                out.push_str(&name);
+                if let Some(spec) = spec {
+                    out.push(':');
+                    out.push_str(spec);
+                }
+                out.push('}');
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next();
+                out.push_str("}}");
+            }
+            '}' => return None,
+            other => out.push(other),
+        }
+    }
+
+    Some((out, used))
+}
+
+fn is_plain_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) if first == '_' || first.is_alphabetic() => {
+            chars.all(|c| c == '_' || c.is_alphanumeric())
+        }
+        _ => false,
+    }
 }
 
 // Extract error_prefix attribute value
@@ -198,9 +301,25 @@ fn implement_for_enum(input: &DeriveInput, error_prefix: &str) -> proc_macro2::T
                     Self::#variant_name { .. } => #caption
                 });
 
-                display_match_arms.push(quote! {
-                    Self::#variant_name { #(#field_names),* } => format!(#display_format, #(#field_names = #field_names),*)
-                });
+                let positional: Vec<String> =
+                    field_names.iter().map(|name| name.to_string()).collect();
+                match rewrite_format(&display_format, &positional) {
+                    Some((format_str, used)) => {
+                        // Bind and pass only the fields the string uses.
+                        let used_fields: Vec<_> = field_names
+                            .iter()
+                            .filter(|name| used.contains(&name.to_string()))
+                            .collect();
+                        display_match_arms.push(quote! {
+                            Self::#variant_name { #(#used_fields,)* .. } => format!(#format_str #(, #used_fields = #used_fields)*)
+                        });
+                    }
+                    None => {
+                        display_match_arms.push(quote! {
+                            Self::#variant_name { #(#field_names),* } => format!(#display_format, #(#field_names = #field_names),*)
+                        });
+                    }
+                }
 
                 retryable_match_arms.push(quote! {
                     Self::#variant_name { .. } => #retryable
@@ -233,9 +352,26 @@ fn implement_for_enum(input: &DeriveInput, error_prefix: &str) -> proc_macro2::T
                 });
 
                 let field_pattern_list = field_names.iter().map(|name| quote! { #name, });
-                display_match_arms.push(quote! {
-                    Self::#variant_name(#(#field_pattern_list)*) => format!(#display_format #(, #field_names)*)
-                });
+                let positional: Vec<String> =
+                    field_names.iter().map(|name| name.to_string()).collect();
+                match rewrite_format(&display_format, &positional) {
+                    Some((format_str, used)) => {
+                        // `_N` bindings never trigger unused-variable
+                        // warnings, so every field can stay bound.
+                        let used_fields: Vec<_> = field_names
+                            .iter()
+                            .filter(|name| used.contains(&name.to_string()))
+                            .collect();
+                        display_match_arms.push(quote! {
+                            Self::#variant_name(#(#field_pattern_list)*) => format!(#format_str #(, #used_fields = #used_fields)*)
+                        });
+                    }
+                    None => {
+                        display_match_arms.push(quote! {
+                            Self::#variant_name(#(#field_pattern_list)*) => format!(#display_format #(, #field_names)*)
+                        });
+                    }
+                }
 
                 retryable_match_arms.push(quote! {
                     Self::#variant_name(..) => #retryable
@@ -374,3 +510,70 @@ fn implement_for_struct(input: &DeriveInput, error_prefix: &str) -> proc_macro2:
 }
 
 // Note: The implementation now handles formatting directly in the match arms instead of using a helper function
+
+#[cfg(test)]
+mod tests {
+    use super::{expand, rewrite_format};
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn union_produces_compile_error_instead_of_panicking() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            union Bits { a: u32, b: f32 }
+        };
+        let output = expand(&input).to_string();
+        assert!(output.contains("compile_error"), "{output}");
+        assert!(output.contains("cannot be derived for unions"), "{output}");
+    }
+
+    #[test]
+    fn rewrite_maps_positional_placeholders_to_bindings() {
+        let tuple = names(&["_0", "_1", "_2"]);
+        assert_eq!(
+            rewrite_format("{} then {} and {0:?}", &tuple),
+            Some((
+                "{_0} then {_1} and {_0:?}".to_string(),
+                names(&["_0", "_1"])
+            ))
+        );
+        assert_eq!(
+            rewrite_format("only {2}", &tuple),
+            Some(("only {_2}".to_string(), names(&["_2"])))
+        );
+        assert_eq!(
+            rewrite_format("NoFields", &tuple),
+            Some(("NoFields".to_string(), Vec::new()))
+        );
+    }
+
+    #[test]
+    fn rewrite_keeps_named_and_escaped_placeholders() {
+        let fields = names(&["host", "port"]);
+        assert_eq!(
+            rewrite_format("{{literal}} {port:>5} {CONST}", &fields),
+            Some((
+                "{{literal}} {port:>5} {CONST}".to_string(),
+                names(&["port"])
+            ))
+        );
+        // Positional references in a struct-like variant map to the
+        // fields in declaration order, as format! did before.
+        assert_eq!(
+            rewrite_format("{}:{}", &fields),
+            Some(("{host}:{port}".to_string(), names(&["host", "port"])))
+        );
+    }
+
+    #[test]
+    fn rewrite_declines_unsupported_strings() {
+        let fields = names(&["a", "b"]);
+        assert_eq!(rewrite_format("{:width$}", &fields), None);
+        assert_eq!(rewrite_format("{:.*}", &fields), None);
+        assert_eq!(rewrite_format("{5}", &fields), None);
+        assert_eq!(rewrite_format("unclosed {", &fields), None);
+        assert_eq!(rewrite_format("stray }", &fields), None);
+    }
+}

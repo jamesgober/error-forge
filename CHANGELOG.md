@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ExponentialBackoff::next_delay` caps the first attempt at `max_delay` like every later attempt; it used to return the initial delay even when that was larger. With the `jitter` feature and `with_jitter(true)`, jitter now applies to the first attempt too, and a jittered delay never exceeds `max_delay` (it could previously land up to 20% above it).
 - `ConsoleTheme` colour detection follows <https://no-color.org/>: `NO_COLOR` disables colour only when it is set to a non-empty value. An empty `NO_COLOR` used to disable colour as well, contrary to both the spec and the code comment. The `ConsoleTheme` rustdoc now counts two `const` preset constructors, not three.
 - The `ErrorLogger::log_panic` rustdoc no longer implies the crate calls it when a panic hook is registered. It states that nothing calls it automatically and shows how to forward to it from your own panic hook.
+- `error-forge-derive`: `#[derive(ModError)]` on a union now reports a `compile_error!` at the `union` keyword instead of panicking inside the proc macro.
+- `error-forge-derive`: `#[derive(ModError)]` no longer generates code that fails to compile ("argument never used" / "named argument never used") for variants with fields that have no `#[error_display]`, or whose display string does not mention every field. Only the fields the string references are passed to `format!`. Strings that compiled before render the same output.
 
 ## [1.0.0] - 2026-05-18
 
