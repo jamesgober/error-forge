@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `group!` rustdoc, README, `docs/API.md` and `docs/migration.md` no longer claim that `define_errors!` implements `ForgeError`. It generates inherent metadata methods only; the docs now show the delegating `impl ForgeError` needed to wrap such an enum in `group!`, and the `group!` rustdoc carries it as a compiled example.
 - `CircuitBreaker` now admits a single probe call once the reset timeout elapses, as `CircuitState::HalfOpen` documents. Concurrent calls fail fast with `CircuitOpenError` until the probe resolves; previously every caller was let through. A probe that panics reopens the circuit instead of leaving it stuck half-open.
 - `CircuitBreaker::state` reports `CircuitState::HalfOpen` once the reset timeout of an open circuit has elapsed. It used to keep reporting `Open` until the next `execute` call. Reading the state does not change it.
+- `ExponentialBackoff::next_delay` caps the first attempt at `max_delay` like every later attempt; it used to return the initial delay even when that was larger. With the `jitter` feature and `with_jitter(true)`, jitter now applies to the first attempt too, and a jittered delay never exceeds `max_delay` (it could previously land up to 20% above it).
 
 ## [1.0.0] - 2026-05-18
 

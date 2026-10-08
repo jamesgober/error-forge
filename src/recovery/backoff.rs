@@ -64,6 +64,9 @@ impl ExponentialBackoff {
 
     /// Enable or disable ±20% jitter on each calculated delay.
     ///
+    /// Jitter applies to every attempt, including the first, and the
+    /// jittered delay is still capped at the maximum delay.
+    ///
     /// Jitter requires the `jitter` cargo feature; without it the
     /// flag is silently ignored and every delay is the
     /// non-jittered exponential value. Off by default.
@@ -75,16 +78,19 @@ impl ExponentialBackoff {
 
 impl Backoff for ExponentialBackoff {
     fn next_delay(&self, attempt: usize) -> Duration {
-        if attempt == 0 {
-            return Duration::from_millis(self.initial_delay_ms);
-        }
-
-        // Calculate exponential delay. Attempts beyond `i32::MAX` clamp
-        // instead of wrapping to a negative exponent. The float-to-int
-        // cast saturates, so an infinite product lands on the cap.
-        let exponent = i32::try_from(attempt).unwrap_or(i32::MAX);
-        let exp_factor = self.factor.powi(exponent);
-        let calculated_delay = (self.initial_delay_ms as f64 * exp_factor) as u64;
+        // Attempt 0 is the initial delay, kept in integer arithmetic so
+        // large values do not lose precision. Like every other attempt
+        // it is capped at `max_delay_ms`.
+        let calculated_delay = if attempt == 0 {
+            self.initial_delay_ms
+        } else {
+            // Attempts beyond `i32::MAX` clamp instead of wrapping to a
+            // negative exponent. The float-to-int cast saturates, so an
+            // infinite product lands on the cap.
+            let exponent = i32::try_from(attempt).unwrap_or(i32::MAX);
+            let exp_factor = self.factor.powi(exponent);
+            (self.initial_delay_ms as f64 * exp_factor) as u64
+        };
         let capped_delay = min(calculated_delay, self.max_delay_ms);
 
         // Jitter is only applied when both the `jitter` cargo feature
@@ -96,7 +102,8 @@ impl Backoff for ExponentialBackoff {
             let mut rng = rand::thread_rng();
             let jitter_factor = rng.gen_range(0.8..1.2);
             let jittered_delay = (capped_delay as f64 * jitter_factor) as u64;
-            return Duration::from_millis(jittered_delay);
+            // Jitter never pushes the delay past the configured cap.
+            return Duration::from_millis(min(jittered_delay, self.max_delay_ms));
         }
 
         Duration::from_millis(capped_delay)

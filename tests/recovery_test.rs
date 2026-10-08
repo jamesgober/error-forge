@@ -316,3 +316,46 @@ fn test_circuit_breaker_panicking_probe_reopens_circuit() {
         .is_ok());
     assert_eq!(circuit.state(), CircuitState::Closed);
 }
+
+#[test]
+fn test_exponential_backoff_first_attempt_is_capped() {
+    // Attempt 0 used to return the initial delay even when it was
+    // larger than the configured maximum.
+    let backoff = ExponentialBackoff::new()
+        .with_initial_delay(5_000)
+        .with_max_delay(1_000);
+    assert_eq!(backoff.next_delay(0), Duration::from_millis(1_000));
+    assert_eq!(backoff.next_delay(1), Duration::from_millis(1_000));
+}
+
+#[cfg(feature = "jitter")]
+#[test]
+fn test_exponential_backoff_jitter_respects_max_delay() {
+    // Jitter used to scale the capped delay by up to 1.2, so a delay
+    // at the cap could come out 20% above `max_delay`.
+    let backoff = ExponentialBackoff::new()
+        .with_initial_delay(1_000)
+        .with_max_delay(1_000)
+        .with_jitter(true);
+    for attempt in 0..200 {
+        let delay = backoff.next_delay(attempt % 8);
+        assert!(delay <= Duration::from_millis(1_000), "{delay:?}");
+        assert!(delay >= Duration::from_millis(800), "{delay:?}");
+    }
+}
+
+#[cfg(feature = "jitter")]
+#[test]
+fn test_exponential_backoff_jitter_applies_to_first_attempt() {
+    // Attempt 0 used to skip jitter and always return exactly the
+    // initial delay.
+    let backoff = ExponentialBackoff::new()
+        .with_initial_delay(1_000)
+        .with_max_delay(10_000)
+        .with_jitter(true);
+    let delays: Vec<Duration> = (0..200).map(|_| backoff.next_delay(0)).collect();
+    assert!(delays
+        .iter()
+        .all(|d| *d >= Duration::from_millis(800) && *d < Duration::from_millis(1_200)));
+    assert!(delays.iter().any(|d| *d != Duration::from_millis(1_000)));
+}
