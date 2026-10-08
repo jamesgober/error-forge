@@ -13,7 +13,22 @@ pub trait ErrorLogger: Send + Sync + 'static {
     /// Log a message with the given level
     fn log_message(&self, message: &str, level: ErrorLevel);
 
-    /// Called when a panic occurs (if panic hook is registered)
+    /// Log a panic.
+    ///
+    /// error-forge does not call this itself: neither
+    /// [`register_logger`] nor
+    /// [`install_panic_hook`](crate::console_theme::install_panic_hook)
+    /// installs a hook that forwards to it. Call it from your own
+    /// panic hook if you want panics routed through the logger:
+    ///
+    /// ```
+    /// std::panic::set_hook(Box::new(|info| {
+    ///     if let Some(logger) = error_forge::logger() {
+    ///         logger.log_panic(info);
+    ///     }
+    /// }));
+    /// # let _ = std::panic::take_hook();
+    /// ```
     fn log_panic(&self, info: &std::panic::PanicHookInfo);
 }
 
