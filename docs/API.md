@@ -200,7 +200,11 @@ Supported attributes:
 - `error_exit_code`
 - `error_fatal`
 
-`error_display` is optional and may mention any subset of the fields: by name for struct-like variants, by position for tuple variants.
+`error_display` is optional and may mention any subset of the fields: by name for struct-like variants (`{type}` for a raw `r#type` field), by position for tuple variants. Width and precision given where the error is formatted (`{:>20}`) apply to the whole message.
+
+Every attribute accepts the list form (`#[error_http_status(404)]`) and the name-value form (`#[error_http_status = 404]`). `#[error_retryable]` and `#[error_fatal]` alone mean `true`; an explicit `(false)` or `= false` is honoured. A value of the wrong type, or an integer that does not fit (`u16` for `error_http_status`, `i32` for `error_exit_code`), is a compile error.
+
+On a struct only `error_prefix` is read; the struct displays as `"<prefix>: Error"` and the other attributes are ignored.
 
 Example:
 

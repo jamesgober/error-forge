@@ -183,7 +183,9 @@ Supported derive attributes:
 - `error_exit_code`
 - `error_fatal`
 
-Both list-style and name-value forms are supported for `error_prefix`.
+Every attribute accepts both the list form (`#[error_http_status(404)]`) and the name-value form (`#[error_http_status = 404]`). A bare `#[error_retryable]` or `#[error_fatal]` means `true`, and an explicit `(false)` / `= false` is honoured. A value of the wrong type or out of range (`#[error_http_status("404")]`) is a compile error.
+
+On a struct, only `error_prefix` is read today: the struct displays as `"<prefix>: Error"` and uses the `ForgeError` defaults for the other metadata. The other attributes are ignored when placed on a struct.
 
 ## Recovery and Resilience
 
