@@ -169,3 +169,57 @@ fn test_retry_with_predicate() {
     assert!(result.is_err());
     assert_eq!(counter.load(Ordering::SeqCst), 6); // Initial + 5 retries
 }
+
+#[test]
+fn test_circuit_breaker_window_longer_than_clock_does_not_panic() {
+    // A failure window longer than the monotonic clock has been
+    // running used to panic with "overflow when subtracting duration
+    // from instant" on the first recorded failure.
+    let circuit = CircuitBreaker::with_config(
+        "long-window",
+        CircuitBreakerConfig::new(2, u64::MAX, 60_000),
+    );
+
+    let result = circuit.execute(|| -> Result<(), TestError> { Err(TestError("error")) });
+    assert!(result.is_err());
+    assert_eq!(circuit.state(), CircuitState::Closed);
+
+    // Every failure stays inside an unbounded window, so the second
+    // one still trips the circuit.
+    let result = circuit.execute(|| -> Result<(), TestError> { Err(TestError("error")) });
+    assert!(result.is_err());
+    assert_eq!(circuit.state(), CircuitState::Open);
+}
+
+#[test]
+fn test_linear_backoff_saturates_instead_of_overflowing() {
+    // `initial + attempt * increment` used to overflow: a panic in
+    // debug builds and a wrapped, far too short delay in release.
+    let backoff = LinearBackoff::new()
+        .with_increment(u64::MAX)
+        .with_max_delay(5_000);
+    assert_eq!(backoff.next_delay(2), Duration::from_millis(5_000));
+
+    let backoff = LinearBackoff::new()
+        .with_initial_delay(u64::MAX)
+        .with_increment(1)
+        .with_max_delay(5_000);
+    assert_eq!(backoff.next_delay(1), Duration::from_millis(5_000));
+    assert_eq!(backoff.next_delay(usize::MAX), Duration::from_millis(5_000));
+}
+
+#[test]
+fn test_exponential_backoff_large_attempt_stays_capped() {
+    // `attempt as i32` used to wrap to a negative exponent, so a very
+    // large attempt count produced a zero delay instead of the cap.
+    let backoff = ExponentialBackoff::new()
+        .with_initial_delay(100)
+        .with_max_delay(10_000)
+        .with_factor(2.0);
+    let attempt = i32::MAX as usize + 1;
+    assert_eq!(backoff.next_delay(attempt), Duration::from_millis(10_000));
+    assert_eq!(
+        backoff.next_delay(usize::MAX),
+        Duration::from_millis(10_000)
+    );
+}

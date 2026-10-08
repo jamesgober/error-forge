@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AsyncForgeError` carries `#[allow(clippy::double_must_use)]` so the code `async_trait` generates for its default methods passes clippy 1.99 under `-D warnings`. No API or behaviour change.
 - CI uses `actions/checkout@v7` (Node 24), installs a prebuilt `cargo-audit` instead of compiling it each run, runs clippy with `--all-targets` for default and all features, and runs the test suite with `--all-features` so the `async`, `log`, `tracing` and `jitter` paths are exercised.
 
+### Fixed
+
+- `CircuitBreaker::execute` no longer panics with "overflow when subtracting duration from instant" when `failure_window_ms` reaches back past the start of the monotonic clock (for example `u64::MAX`, or a window longer than the host's uptime). Such a window now keeps every recorded failure.
+- `LinearBackoff::next_delay` saturates at `max_delay` instead of overflowing on large `attempt` or `increment` values. Debug builds used to panic and release builds returned a wrapped, far too short delay.
+- `ExponentialBackoff::next_delay` clamps attempts above `i32::MAX` instead of wrapping to a negative exponent, which returned a zero delay where the cap was expected.
+
 ## [1.0.0] - 2026-05-18
 
 Stable API. The public surface is locked under SemVer for the entire `1.x` line — see [`docs/STABILITY.md`](docs/STABILITY.md) for the binding policy and [`docs/API-FREEZE-AUDIT.md`](docs/API-FREEZE-AUDIT.md) for the surface manifest. Three breaking corrections at the freeze boundary (`group!` macro, `parking_lot::Mutex` in `CircuitBreaker`, `AsyncForgeError::async_handle` default), several deprecations, `#[non_exhaustive]` annotations on public types likely to grow, and a substantial documentation expansion. See the full release notes in [`.dev/release/v1.0.0.md`](.dev/release/v1.0.0.md).

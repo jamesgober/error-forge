@@ -79,8 +79,11 @@ impl Backoff for ExponentialBackoff {
             return Duration::from_millis(self.initial_delay_ms);
         }
 
-        // Calculate exponential delay
-        let exp_factor = self.factor.powi(attempt as i32);
+        // Calculate exponential delay. Attempts beyond `i32::MAX` clamp
+        // instead of wrapping to a negative exponent. The float-to-int
+        // cast saturates, so an infinite product lands on the cap.
+        let exponent = i32::try_from(attempt).unwrap_or(i32::MAX);
+        let exp_factor = self.factor.powi(exponent);
         let calculated_delay = (self.initial_delay_ms as f64 * exp_factor) as u64;
         let capped_delay = min(calculated_delay, self.max_delay_ms);
 
@@ -150,7 +153,12 @@ impl LinearBackoff {
 
 impl Backoff for LinearBackoff {
     fn next_delay(&self, attempt: usize) -> Duration {
-        let delay_ms = self.initial_delay_ms + (attempt as u64 * self.increment_ms);
+        // Saturate so large attempts or increments hit the cap instead
+        // of overflowing (a panic in debug builds, a wrap in release).
+        let attempt = u64::try_from(attempt).unwrap_or(u64::MAX);
+        let delay_ms = self
+            .initial_delay_ms
+            .saturating_add(attempt.saturating_mul(self.increment_ms));
         let capped_delay = min(delay_ms, self.max_delay_ms);
         Duration::from_millis(capped_delay)
     }

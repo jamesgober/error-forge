@@ -201,9 +201,15 @@ impl CircuitBreaker {
         let now = Instant::now();
         inner.failures.push(now);
 
-        // Remove old failures outside the window
-        let window_start = now - Duration::from_millis(inner.config.failure_window_ms);
-        inner.failures.retain(|&time| time >= window_start);
+        // Remove old failures outside the window. When the window
+        // reaches back past the start of the monotonic clock (a very
+        // large `failure_window_ms`), every recorded failure is inside
+        // it and nothing is dropped. Plain `Instant - Duration` panics
+        // in that case.
+        let window = Duration::from_millis(inner.config.failure_window_ms);
+        if let Some(window_start) = now.checked_sub(window) {
+            inner.failures.retain(|&time| time >= window_start);
+        }
 
         // Check if threshold is reached
         if inner.state == CircuitState::Closed
