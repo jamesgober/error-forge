@@ -85,6 +85,31 @@ jobs:
       - name: Build (all features)
         run: cargo build --workspace --all-features
 
+  # Checks that the version floors declared in `Cargo.toml` really
+  # build: every direct dependency is resolved to the lowest version
+  # its requirement allows, then the crate is built on the MSRV.
+  # Dev-dependencies are dropped first; they only serve the tests and
+  # their floors would otherwise constrain the runtime ones.
+  minimal-versions:
+    name: Minimal versions (Rust 1.81)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@1.81.0
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - name: Drop dev-dependencies
+        run: cargo hack --remove-dev-deps --workspace
+      - name: Resolve direct dependencies to their minimum versions
+        run: cargo +nightly update -Z direct-minimal-versions
+      - name: Build (all features)
+        run: cargo +1.81.0 build --workspace --all-features
+      - name: Build (no default features)
+        run: cargo +1.81.0 build --workspace --no-default-features
+
   # Security advisory scan. Runs `cargo audit` against the RustSec
   # database on every push so deprecated / vulnerable transitive
   # crates surface immediately.

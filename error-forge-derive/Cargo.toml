@@ -16,6 +16,9 @@ authors = [
 proc-macro = true
 
 [dependencies]
-syn = "1.0"
-quote = "1.0"
-proc-macro2 = "1.0"
+# Floors checked with `cargo update -Z direct-minimal-versions` (see the
+# `minimal-versions` CI job): `syn` 1.0.3 adds `Path::get_ident`, and
+# `quote` / `proc-macro2` match what `async-trait` needs in the same graph.
+syn = "1.0.3"
+quote = "1.0.29"
+proc-macro2 = "1.0.63"
