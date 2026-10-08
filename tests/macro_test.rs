@@ -160,3 +160,34 @@ fn test_define_errors_default_fatal_is_false() {
     assert_eq!(error.kind(), "Config");
     assert!(!error.is_fatal());
 }
+
+// `define_errors!` must work when invoked by path, without a `use` that
+// brings the macro name into scope. Its internal helper arms used to
+// recurse through the bare `define_errors!` name, which only resolved
+// when the caller had imported it.
+mod path_invocation {
+    error_forge::define_errors! {
+        pub enum PathInvokedError {
+            #[error(display = "Lookup failed for {key}", key)]
+            #[kind(Lookup, retryable = true, status = 404, caption = "Lookup")]
+            Missing { key: String },
+
+            #[kind(Config, fatal = true)]
+            Broken,
+        }
+    }
+
+    #[test]
+    fn test_define_errors_invoked_by_path() {
+        let missing = PathInvokedError::missing("user:7".to_string());
+        assert_eq!(missing.to_string(), "Lookup failed for user:7");
+        assert_eq!(missing.kind(), "Lookup");
+        assert_eq!(missing.caption(), "Lookup");
+        assert!(missing.is_retryable());
+        assert_eq!(missing.status_code(), 404);
+
+        let broken = PathInvokedError::broken();
+        assert!(broken.is_fatal());
+        assert_eq!(broken.status_code(), 500);
+    }
+}

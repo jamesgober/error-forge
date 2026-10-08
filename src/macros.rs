@@ -254,7 +254,7 @@ macro_rules! define_errors {
                 pub fn caption(&self) -> &'static str {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_caption $kind $(, $($tag = $val),* )?)
+                            $crate::define_errors!(@get_caption $kind $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -270,7 +270,7 @@ macro_rules! define_errors {
                 pub fn is_retryable(&self) -> bool {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag retryable, false $(, $($tag = $val),* )?)
+                            $crate::define_errors!(@get_tag retryable, false $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -278,7 +278,7 @@ macro_rules! define_errors {
                 pub fn is_fatal(&self) -> bool {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag fatal, false $(, $($tag = $val),* )?)
+                            $crate::define_errors!(@get_tag fatal, false $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -286,7 +286,7 @@ macro_rules! define_errors {
                 pub fn status_code(&self) -> u16 {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag status, 500 $(, $($tag = $val),* )?)
+                            $crate::define_errors!(@get_tag status, 500 $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -294,7 +294,7 @@ macro_rules! define_errors {
                 pub fn exit_code(&self) -> i32 {
                     match self {
                         $( Self::$variant { .. } => {
-                            define_errors!(@get_tag exit, 1 $(, $($tag = $val),* )?)
+                            $crate::define_errors!(@get_tag exit, 1 $(, $($tag = $val),* )?)
                         } ),*
                     }
                 }
@@ -306,7 +306,7 @@ macro_rules! define_errors {
                         $( Self::$variant $( { $($field),* } )? => {
                             $(
                                 #[allow(unused_variables)]
-                                if let Some(display) = define_errors!(@format_display $display $(, $($display_param),*)?) {
+                                if let Some(display) = $crate::define_errors!(@format_display $display $(, $($display_param),*)?) {
                                     return write!(f, "{}", display);
                                 }
                             )?
@@ -332,7 +332,7 @@ macro_rules! define_errors {
                 fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
                     match self {
                         $( Self::$variant $( { $($field),* } )? => {
-                            define_errors!(@find_source $( $($field),* )? )
+                            $crate::define_errors!(@find_source $( $($field),* )? )
                         } ),*
                     }
                 }
@@ -345,7 +345,7 @@ macro_rules! define_errors {
     };
 
     (@find_source $field:ident $(, $rest:ident)*) => {
-        define_errors!(@find_source_match $field, $field $(, $rest)*)
+        $crate::define_errors!(@find_source_match $field, $field $(, $rest)*)
     };
 
     (@find_source_match source, $source_field:ident $(, $rest:ident)*) => {
@@ -353,7 +353,7 @@ macro_rules! define_errors {
     };
 
     (@find_source_match $field_name:ident, $field:ident $(, $rest:ident)*) => {
-        define_errors!(@find_source $($rest),*)
+        $crate::define_errors!(@find_source $($rest),*)
     };
 
     (@get_caption $kind:ident) => {
@@ -365,7 +365,7 @@ macro_rules! define_errors {
     };
 
     (@get_caption $kind:ident, $tag:ident = $val:expr $(, $($rest:tt)*)?) => {
-        define_errors!(@get_caption $kind $(, $($rest)*)?)
+        $crate::define_errors!(@get_caption $kind $(, $($rest)*)?)
     };
 
     (@get_tag $target:ident, $default:expr) => {
@@ -389,7 +389,7 @@ macro_rules! define_errors {
     };
 
     (@get_tag $target:ident, $default:expr, $tag:ident = $val:expr $(, $($rest:tt)*)?) => {
-        define_errors!(@get_tag $target, $default $(, $($rest)*)?)
+        $crate::define_errors!(@get_tag $target, $default $(, $($rest)*)?)
     };
 
     (@format_display $display:literal) => {

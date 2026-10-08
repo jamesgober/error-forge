@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CircuitBreaker::execute` no longer panics with "overflow when subtracting duration from instant" when `failure_window_ms` reaches back past the start of the monotonic clock (for example `u64::MAX`, or a window longer than the host's uptime). Such a window now keeps every recorded failure.
 - `LinearBackoff::next_delay` saturates at `max_delay` instead of overflowing on large `attempt` or `increment` values. Debug builds used to panic and release builds returned a wrapped, far too short delay.
 - `ExponentialBackoff::next_delay` clamps attempts above `i32::MAX` instead of wrapping to a negative exponent, which returned a zero delay where the cap was expected.
+- `define_errors!` now works when invoked by path (`error_forge::define_errors! { ... }`) without importing the macro. Its internal helper arms recursed through the bare `define_errors!` name and failed with "cannot find macro `define_errors` in this scope"; they now go through `$crate::define_errors!`.
 
 ## [1.0.0] - 2026-05-18
 
