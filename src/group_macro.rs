@@ -25,8 +25,7 @@ use std::error::Error as StdError;
 ///
 /// // `AppError` already implements `ForgeError`, so it can be
 /// // wrapped directly. Other types you wrap with `group!` must
-/// // also implement `ForgeError` (use `define_errors!` or
-/// // `#[derive(ModError)]` to produce them).
+/// // also implement `ForgeError` (see the next section).
 /// group! {
 ///     #[derive(Debug)]
 ///     pub enum ServiceError {
@@ -41,10 +40,51 @@ use std::error::Error as StdError;
 ///
 /// # `ForgeError` requirement
 ///
-/// Each wrapped source type must implement [`ForgeError`]. If you
-/// need to compose with a type that does not (e.g. `std::io::Error`),
-/// wrap it once in a `define_errors!` enum variant or
-/// `#[derive(ModError)]` enum and then group the result.
+/// Each wrapped source type must implement [`ForgeError`].
+/// `#[derive(ModError)]` (the `derive` feature) implements it for
+/// you. [`define_errors!`] does **not**: it generates inherent
+/// methods with the same names (`kind`, `caption`, `is_retryable`,
+/// `is_fatal`, `status_code`, `exit_code`) but no trait impl, so a
+/// `define_errors!` enum needs a short delegating impl before it can
+/// be grouped. The same applies to a foreign type such as
+/// `std::io::Error`: wrap it in a variant of an enum that implements
+/// [`ForgeError`] and group that enum.
+///
+/// ```
+/// use error_forge::{define_errors, group, AppError, ForgeError};
+///
+/// define_errors! {
+///     pub enum FsError {
+///         #[error(display = "Could not write {path}", path)]
+///         #[kind(Filesystem, status = 500)]
+///         WriteFailed { path: String },
+///     }
+/// }
+///
+/// // `FsError::kind(self)` resolves to the inherent method the
+/// // macro generated, not back to this trait method.
+/// impl ForgeError for FsError {
+///     fn kind(&self) -> &'static str { FsError::kind(self) }
+///     fn caption(&self) -> &'static str { FsError::caption(self) }
+///     fn is_retryable(&self) -> bool { FsError::is_retryable(self) }
+///     fn is_fatal(&self) -> bool { FsError::is_fatal(self) }
+///     fn status_code(&self) -> u16 { FsError::status_code(self) }
+///     fn exit_code(&self) -> i32 { FsError::exit_code(self) }
+/// }
+///
+/// group! {
+///     #[derive(Debug)]
+///     pub enum ServiceError {
+///         App(AppError),
+///         Fs(FsError),
+///     }
+/// }
+///
+/// let err: ServiceError = FsError::writefailed("out.log".to_string()).into();
+/// assert_eq!(err.to_string(), "Could not write out.log");
+/// assert_eq!(err.kind(), "Filesystem");
+/// assert_eq!(err.status_code(), 500);
+/// ```
 ///
 /// This is a **breaking change from `0.9.x`**, where `group!`
 /// accepted any wrapped type but the resulting `ForgeError` impl
@@ -54,6 +94,7 @@ use std::error::Error as StdError;
 /// trait bound the compiler can verify.
 ///
 /// [`ForgeError`]: crate::error::ForgeError
+/// [`define_errors!`]: crate::define_errors
 #[macro_export]
 macro_rules! group {
     (

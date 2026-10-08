@@ -101,6 +101,7 @@ Notes:
 - A field named `source` participates in `std::error::Error::source()` chaining.
 - For custom `source` field types, implement `error_forge::macros::ErrorSource` in your crate.
 - With the `serde` feature enabled, source fields must themselves be serializable if you want to derive serialization through the macro-generated enum.
+- The metadata methods (`kind`, `caption`, `is_retryable`, `is_fatal`, `status_code`, `exit_code`) are generated as inherent methods; the macro does not implement the `ForgeError` trait. To pass the enum to `group!`, `ForgeErrorRecovery`, `log_error` or `print_error`, add a short `impl ForgeError` that delegates to those methods (the `group!` API docs show one).
 
 ### Adding Context Without Losing the Original Error
 

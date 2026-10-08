@@ -40,7 +40,7 @@ inner error.
 ```rust
 use error_forge::{define_errors, group, AppError, ForgeError};
 
-// Wrap `io::Error` in a ForgeError-implementing newtype first.
+// Wrap `io::Error` in a ForgeError-implementing enum first.
 define_errors! {
     pub enum FsError {
         #[error(display = "Filesystem failure: {message}", message)]
@@ -49,18 +49,31 @@ define_errors! {
     }
 }
 
+// `define_errors!` generates inherent metadata methods but not the
+// `ForgeError` trait impl, so delegate to them.
+impl ForgeError for FsError {
+    fn kind(&self) -> &'static str { FsError::kind(self) }
+    fn caption(&self) -> &'static str { FsError::caption(self) }
+    fn is_retryable(&self) -> bool { FsError::is_retryable(self) }
+    fn is_fatal(&self) -> bool { FsError::is_fatal(self) }
+    fn status_code(&self) -> u16 { FsError::status_code(self) }
+    fn exit_code(&self) -> i32 { FsError::exit_code(self) }
+}
+
 group! {
+    #[derive(Debug)]
     pub enum ServiceError {
         App(AppError),       // implements ForgeError directly
-        Fs(FsError),         // implements ForgeError via define_errors!
+        Fs(FsError),         // implements ForgeError via the impl above
     }
 }
 ```
 
 Each variant in a `group!` enum must now wrap a type that
 implements `ForgeError`. If you have a bare `std::io::Error` or
-similar foreign error type, wrap it once via `define_errors!`
-or `#[derive(ModError)]` and then group the result.
+similar foreign error type, wrap it once in a `#[derive(ModError)]`
+enum, or in a `define_errors!` enum plus the delegating impl shown
+above, and then group the result.
 
 ### 2. `AsyncForgeError::async_handle` is now optional
 

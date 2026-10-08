@@ -89,7 +89,7 @@ pub type Result<T> = std::result::Result<T, error_forge::error::AppError>;
 
 ### `define_errors!`
 
-Use `define_errors!` when you want a custom error enum with generated constructors and `ForgeError` metadata.
+Use `define_errors!` when you want a custom error enum with generated constructors and `ForgeError`-style metadata methods. The methods are inherent; the macro does not implement the `ForgeError` trait itself, so add a delegating `impl ForgeError` when the enum has to satisfy a `ForgeError` bound (`group!`, `ForgeErrorRecovery`, `log_error`, `print_error`).
 
 ```rust
 use error_forge::define_errors;
