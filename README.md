@@ -43,6 +43,8 @@ Common optional features:
 - `tracing`: enables the `tracing` adapter
 - `jitter`: enables ±20% jitter in `ExponentialBackoff` (pulls in `rand`)
 
+The `console`, `backtrace`, `registry`, `collector` and `context` features exist but currently gate nothing: console formatting, the error-code registry, collectors and context wrapping are always compiled in, and no backtrace is captured automatically. They are kept so existing `Cargo.toml` files keep resolving; enabling them has no effect.
+
 ## Quick Start
 
 ### Built-in `AppError`
@@ -192,17 +194,26 @@ On a struct, only `error_prefix` is read today: the struct displays as `"<prefix
 The recovery module is intentionally synchronous today. It is designed for blocking code, worker threads, and service wrappers where a small sleep is acceptable.
 
 ```rust
-use error_forge::recovery::{CircuitBreaker, RetryPolicy};
+use error_forge::recovery::{CircuitBreaker, CircuitOpenError, RetryPolicy};
 
 fn main() {
     let breaker = CircuitBreaker::new("inventory-service");
     let policy = RetryPolicy::new_fixed(25).with_max_retries(3);
 
-    let value: Result<u32, std::io::Error> = breaker.execute(|| {
-        policy.retry(|| Ok(42))
-    });
-
+    // `execute` returns `RecoveryResult<T>`: the closure's error is boxed
+    // as `Box<dyn Error + Send + Sync>`.
+    let value = breaker.execute(|| policy.retry(|| Ok::<u32, std::io::Error>(42)));
     assert_eq!(value.unwrap(), 42);
+
+    // Downcast the boxed error to tell a fail-fast rejection apart from
+    // the closure's own error.
+    if let Err(error) = breaker.execute(|| Err::<u32, _>(std::io::Error::other("down"))) {
+        if error.is::<CircuitOpenError>() {
+            eprintln!("circuit open, skipped the call");
+        } else if let Some(io) = error.downcast_ref::<std::io::Error>() {
+            eprintln!("call failed: {io}");
+        }
+    }
 }
 ```
 
@@ -269,6 +280,43 @@ fn main() {
 
     assert_eq!(error.status_code(), 401);
     println!("{}", error.dev_message());
+}
+```
+
+## Known Limitations
+
+### Ambiguous method calls with the `async` feature
+
+`AppError` implements both `ForgeError` and, with the `async` feature, `AsyncForgeError`. The two traits have methods with the same names (`kind`, `caption`, `is_retryable`, ...). Cargo features are unified across the dependency graph, so if any crate in your build enables `async`, a call such as `error.kind()` fails with `E0034` ("multiple applicable items in scope") wherever both traits are imported, for example through `use error_forge::*`.
+
+Import only the trait you call, or use qualified syntax:
+
+```rust
+use error_forge::{AppError, ForgeError};
+
+fn main() {
+    let error = AppError::config("missing key");
+
+    // Works whether or not `async` is enabled anywhere in the graph.
+    assert_eq!(ForgeError::kind(&error), "Config");
+    assert_eq!(<AppError as ForgeError>::status_code(&error), 500);
+}
+```
+
+### `ResultExt::context` and `anyhow::Context`
+
+`error_forge::ResultExt` and `anyhow::Context` both add a `context` method to `Result`. With both traits in scope, `result.context(...)` is ambiguous. Import only one of them in a module, or call the error-forge method by path:
+
+```rust
+use error_forge::{AppError, ResultExt};
+
+fn main() {
+    let result: Result<(), AppError> = Err(AppError::config("bad value"));
+    let wrapped = ResultExt::context(result, "loading settings");
+    assert_eq!(
+        wrapped.unwrap_err().to_string(),
+        "loading settings: \u{2699}\u{fe0f} Configuration Error: bad value"
+    );
 }
 ```
 

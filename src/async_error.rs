@@ -61,6 +61,23 @@ use async_trait::async_trait;
 /// and the stub `AppError` implementation is removed. Implementors
 /// who actually want async behaviour override the default; everyone
 /// else can derive the trait without writing the method.
+///
+/// # Ambiguous method calls
+///
+/// [`AppError`](crate::error::AppError) implements both this trait and
+/// [`ForgeError`](crate::error::ForgeError), and the two share method
+/// names. Cargo unifies features across the dependency graph, so once
+/// any crate enables `async`, a call such as `error.kind()` is
+/// ambiguous (`E0034`) wherever both traits are in scope, for example
+/// after `use error_forge::*`. Import only the trait you call, or use
+/// qualified syntax:
+///
+/// ```
+/// use error_forge::{AppError, ForgeError};
+///
+/// let error = AppError::config("missing key");
+/// assert_eq!(ForgeError::kind(&error), "Config");
+/// ```
 #[cfg(feature = "async")]
 // `async_trait` expands each default `async fn` body into a method that
 // carries a bare `#[must_use]` and returns `Pin<Box<dyn Future>>`. Clippy

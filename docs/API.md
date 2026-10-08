@@ -283,6 +283,8 @@ let outer = err.context("Starting service");
 assert!(outer.to_string().starts_with("Starting service: Loading settings: "));
 ```
 
+`anyhow::Context` also adds a `context` method to `Result`. With both traits in scope the call is ambiguous; import only one per module, or call this one by path: `ResultExt::context(result, "...")`.
+
 ## Error Codes and Registry
 
 ### `register_error_code(...)`
@@ -668,6 +670,8 @@ pub trait AsyncForgeError: Error + Send + Sync + 'static {
     fn register(&self) {}
 }
 ```
+
+`AppError` implements both traits, which share method names. Because Cargo unifies features across the dependency graph, enabling `async` in any crate makes `error.kind()` ambiguous (`E0034`) in every module that has both `ForgeError` and `AsyncForgeError` in scope, for example through `use error_forge::*`. Import only the trait you need, or call `ForgeError::kind(&error)`.
 
 Additional async exports:
 

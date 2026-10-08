@@ -40,8 +40,11 @@ Patch release for `error-forge` and `error-forge-derive`. Bug fixes, documentati
 - `#[derive(ModError)]`: fields with raw identifiers (`r#type`) compile, and display strings may name them as `{type}` or `{r#type}`. Width and precision arguments taken from fields (`{value:>width$}`) keep working.
 - `CircuitBreaker` credited the outcome of a slow call admitted while the circuit was closed to the half-open probe: if it finished during the probe, a failure reopened the circuit and a success closed it and let further callers through, breaking the single-probe guarantee. Only the probe now decides how the circuit leaves half-open; outcomes of calls admitted before the circuit tripped, or before `reset`, no longer count.
 - `ErrorCollector::default()` no longer requires `E: Default`; the derived impl added that bound.
+- The README circuit-breaker example used `CircuitBreaker::execute` as if it returned the closure's error type and did not compile. It now shows the boxed `RecoveryResult` and how to tell `CircuitOpenError` apart from the closure's error. README code blocks run as doctests so they keep compiling.
 - `docs/STABILITY.md` no longer says `define_errors!` generates `ForgeError` impls; it generates inherent metadata methods.
+- The `ForgeError::register` rustdoc no longer claims it registers the error with "the central error registry". It fires the error hook and stores nothing.
 - The `ConsoleTheme::format_error` rustdoc no longer claims the method allocates exactly once.
+- Documented limitations that need a breaking change to fix: enabling `async` anywhere in the dependency graph makes method calls such as `error.kind()` on `AppError` ambiguous where both `ForgeError` and `AsyncForgeError` are in scope (use `ForgeError::kind(&error)` or import one trait), and `ResultExt::context` collides with `anyhow::Context` (call `ResultExt::context(result, ...)` by path). The README, `docs/API.md` and the trait rustdocs show the workarounds. The README and `Cargo.toml` also state that the `console`, `backtrace`, `registry`, `collector` and `context` features gate nothing, and the derive docs state that attributes other than `error_prefix` are ignored on structs.
 
 ## [1.0.1] - 2026-10-08
 

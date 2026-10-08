@@ -92,6 +92,10 @@ rand = { version = "0.8.5", optional = true }
 default = []
 derive = ["error-forge-derive"]
 serde = ["dep:serde"]
+# `console`, `backtrace`, `registry`, `collector` and `context` gate
+# nothing: the related APIs are always compiled in and no backtrace is
+# captured automatically. They stay so existing manifests that enable
+# them keep resolving (removing a feature is a breaking change).
 console = []
 backtrace = []
 # Enables ±20% jitter in `recovery::ExponentialBackoff::with_jitter`.

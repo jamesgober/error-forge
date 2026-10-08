@@ -64,6 +64,20 @@ impl<E: std::error::Error + 'static, C: fmt::Display + fmt::Debug + Send + Sync 
 }
 
 /// Extension trait for Result types to add context to errors
+///
+/// `anyhow::Context` also adds a `context` method to `Result`. With both
+/// traits in scope, `result.context(...)` is ambiguous; import only one
+/// of them in a module, or call this one by path.
+///
+/// # Example
+///
+/// ```
+/// use error_forge::{AppError, ResultExt};
+///
+/// let result: Result<(), AppError> = Err(AppError::config("bad value"));
+/// let wrapped = ResultExt::context(result, "loading settings");
+/// assert!(wrapped.unwrap_err().to_string().starts_with("loading settings: "));
+/// ```
 pub trait ResultExt<T, E> {
     /// Adds context to the error variant of the Result
     fn context<C>(self, context: C) -> Result<T, ContextError<E, C>>;

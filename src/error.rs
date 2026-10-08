@@ -71,7 +71,25 @@ pub trait ForgeError: std::error::Error + Send + Sync + 'static {
         None
     }
 
-    /// Registers the error with the central error registry
+    /// Fires the registered error hook (see
+    /// [`try_register_error_hook`](crate::macros::try_register_error_hook))
+    /// with this error's caption, kind and flags.
+    ///
+    /// Despite the name, nothing is stored: this does not touch the
+    /// error-code [`ErrorRegistry`](crate::registry::ErrorRegistry).
+    /// `AppError` and `define_errors!` constructors already fire the
+    /// hook, so calling `register` on such an error fires it a second
+    /// time. It is a no-op when no hook is registered.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use error_forge::{AppError, ForgeError};
+    ///
+    /// let error = AppError::config("missing key");
+    /// // Reports the error to the hook again, if one is installed.
+    /// error.register();
+    /// ```
     fn register(&self) {
         crate::macros::call_error_hook(
             self.caption(),

@@ -122,6 +122,16 @@ pub mod __private {
 #[doc = include_str!("../docs/API.md")]
 pub struct ApiReferenceDoctests;
 
+/// Runs every `rust` code block in `README.md` as a doctest. The derive
+/// example needs the `derive` feature. Doctests are compiled with this
+/// crate's features as `cfg`s, so with `serde` on, the `serde` derive
+/// that `define_errors!` adds would also apply to the README enums,
+/// whose `source` fields are not serializable; the README is checked by
+/// the feature combinations without `serde` instead.
+#[cfg(all(doctest, feature = "derive", not(feature = "serde")))]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
+
 #[cfg(test)]
 mod tests {
     use crate::ForgeError;
