@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CircuitBreaker` now admits a single probe call once the reset timeout elapses, as `CircuitState::HalfOpen` documents. Concurrent calls fail fast with `CircuitOpenError` until the probe resolves; previously every caller was let through. A probe that panics reopens the circuit instead of leaving it stuck half-open.
 - `CircuitBreaker::state` reports `CircuitState::HalfOpen` once the reset timeout of an open circuit has elapsed. It used to keep reporting `Open` until the next `execute` call. Reading the state does not change it.
 - `ExponentialBackoff::next_delay` caps the first attempt at `max_delay` like every later attempt; it used to return the initial delay even when that was larger. With the `jitter` feature and `with_jitter(true)`, jitter now applies to the first attempt too, and a jittered delay never exceeds `max_delay` (it could previously land up to 20% above it).
+- `ConsoleTheme` colour detection follows <https://no-color.org/>: `NO_COLOR` disables colour only when it is set to a non-empty value. An empty `NO_COLOR` used to disable colour as well, contrary to both the spec and the code comment. The `ConsoleTheme` rustdoc now counts two `const` preset constructors, not three.
 
 ## [1.0.0] - 2026-05-18
 

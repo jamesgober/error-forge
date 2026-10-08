@@ -4,14 +4,14 @@
 //! displayed in terminal environments. It auto-detects terminal
 //! capabilities via [`std::io::IsTerminal`] and disables colors when
 //! stderr is not a TTY, when `TERM=dumb`, or when `NO_COLOR` is set
-//! (<https://no-color.org/>).
+//! to a non-empty value (<https://no-color.org/>).
 
 use std::io::IsTerminal;
 
 /// Color theme for console error output.
 ///
 /// The fields are `&'static str` ANSI escapes — no allocation per
-/// construction, and `const`-constructible for the three preset
+/// construction, and `const`-constructible for the two preset
 /// constructors ([`ConsoleTheme::with_colors`], [`ConsoleTheme::plain`]).
 pub struct ConsoleTheme {
     error_color: &'static str,
@@ -45,8 +45,7 @@ fn terminal_supports_ansi() -> bool {
             }
         }
 
-        // <https://no-color.org/>: any non-empty `NO_COLOR` disables.
-        if std::env::var_os("NO_COLOR").is_some() {
+        if no_color_requested(std::env::var_os("NO_COLOR").as_deref()) {
             return false;
         }
 
@@ -64,6 +63,15 @@ fn terminal_supports_ansi() -> bool {
     })
 }
 
+/// Whether a `NO_COLOR` value asks for colour to be disabled.
+///
+/// Per <https://no-color.org/>, colour is disabled when the variable is
+/// present and not an empty string, regardless of its value. An unset or
+/// empty `NO_COLOR` leaves colour on.
+fn no_color_requested(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|v| !v.is_empty())
+}
+
 impl Default for ConsoleTheme {
     fn default() -> Self {
         if terminal_supports_ansi() {
@@ -77,7 +85,7 @@ impl Default for ConsoleTheme {
 impl ConsoleTheme {
     /// Create a new theme with default colors. Auto-detects terminal
     /// color support; falls back to [`Self::plain`] if stderr is not
-    /// a TTY, `TERM=dumb`, or `NO_COLOR` is set.
+    /// a TTY, `TERM=dumb`, or `NO_COLOR` is set to a non-empty value.
     pub fn new() -> Self {
         Self::default()
     }
@@ -221,4 +229,21 @@ pub fn install_panic_hook() {
             theme.error(&format!("{} {}", message, theme.dim(&location)))
         );
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::no_color_requested;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn test_no_color_follows_spec() {
+        // An empty `NO_COLOR` used to disable colour too, contrary to
+        // no-color.org ("when present and not an empty string").
+        assert!(!no_color_requested(None));
+        assert!(!no_color_requested(Some(OsStr::new(""))));
+        assert!(no_color_requested(Some(OsStr::new("1"))));
+        assert!(no_color_requested(Some(OsStr::new("0"))));
+        assert!(no_color_requested(Some(OsStr::new("false"))));
+    }
 }
