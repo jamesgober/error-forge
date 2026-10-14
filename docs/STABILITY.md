@@ -90,8 +90,8 @@ any of the following requires `2.0.0`:
 - Changing the default-feature set
   (default features are `[]` in `1.0.0`; adding a default
   feature, or making a default feature opt-in, is breaking).
-- Adding a runtime dependency that is not gated behind an
-  opt-in feature.
+- Adding a third-party runtime dependency that is not gated
+  behind an opt-in feature.
 - A change that breaks the documented `0.9.x → 1.0.0`
   migration in [`docs/migration.md`](migration.md).
 
@@ -130,8 +130,10 @@ be a bug. Specifically:
   `Err("Error hook already registered")` instead.
 - `ConsoleTheme` formatting never panics; ANSI escapes are
   static strings.
-- `recovery::CircuitBreaker` uses `parking_lot::Mutex`, which
-  does not poison; `lock()` cannot panic in our usage.
+- `recovery::CircuitBreaker` never panics on a poisoned lock: the
+  protected closure runs outside the lock, and the internal
+  `std::sync::Mutex` is taken through `PoisonError::into_inner`
+  (`parking_lot::Mutex` up to `1.0.2`).
 - `recovery::RetryExecutor::retry` propagates the inner
   operation's panic if the closure panics (matches what every
   retry library does).
@@ -146,7 +148,7 @@ The stability contract does NOT cover:
   `"[CODE] "` on `CodedError`-formatted output are part of the
   contract; the human-readable text following them is not.
 - **Internal types and modules.** Any item not re-exported
-  through `lib.rs` (`pastey`, internal helpers in
+  through `lib.rs` (`__private::paste!`, internal helpers in
   `error.rs::panic_payload_to_listener_error`, the private
   `recovery::retry::{BackoffStrategy, BackoffType, RetryPredicate}`)
   is internal and may move or change between minor releases.
@@ -158,27 +160,42 @@ The stability contract does NOT cover:
 
 The following runtime dependencies are sealed for the `1.x` line:
 
-- `pastey` (always-on, macro support — drop-in fork of the
-  archived `paste`).
-- `parking_lot` (always-on, non-poisoning `Mutex` used by
-  `recovery::CircuitBreaker`).
-- `error-forge-derive` (optional, gated on `derive` feature).
+- `error-forge-derive` (always-on, in-house, same version as
+  `error-forge`). With default features off it has no
+  dependencies and supplies the identifier pasting
+  `define_errors!` uses. Its `#[derive(ModError)]` and the `syn`,
+  `quote` and `proc-macro2` it needs are gated on the `derive`
+  feature.
 - `serde` (optional, gated on `serde` feature).
 - `log` (optional, gated on `log` feature).
 - `tracing` (optional, gated on `tracing` feature).
 - `async-trait` (optional, gated on `async` feature).
 - `rand` (optional, gated on `jitter` feature).
 
-Adding a new runtime dependency requires a `2.0.0` bump.
-Removing any of the always-on deps requires a `2.0.0` bump.
-Adding new optional dependencies behind a new opt-in feature is
-a minor-version bump.
+With default features the dependency graph contains no
+third-party crate. Adding a third-party runtime dependency that is
+not behind an opt-in feature requires a `2.0.0` bump. Adding
+optional dependencies behind a new opt-in feature is a
+minor-version bump. Removing a dependency whose types do not
+appear in the public API is not a breaking change: Cargo does not
+let a crate use a transitive dependency it does not declare.
 
 `1.0.0` and `1.0.1` also listed `thiserror` here. No code in either
 crate used it and no `thiserror` type appears in the public API, so
 dependents could not observe it (Cargo does not let a crate use a
 transitive dependency it does not declare). `1.0.2` drops it as a
 build-time fix.
+
+`1.0.x` also listed `pastey` and `parking_lot` as always-on and
+said removing an always-on dependency required `2.0.0`. That rule
+protected nothing: neither crate's types appear in the public API,
+so no dependent could name or rely on them. `1.1.0` removes both
+and narrows the rules above to what dependents can observe.
+`define_errors!` now pastes identifiers through
+`error-forge-derive` (previously an optional dependency, now
+always on with its own dependencies switched off), and
+`CircuitBreaker` uses `std::sync::Mutex`. The default dependency
+graph went from eight third-party crates to none.
 
 ## MSRV
 

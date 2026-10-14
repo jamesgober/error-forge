@@ -342,7 +342,7 @@ macro_rules! define_errors {
 
         impl $name {
             $(
-                $crate::__private::pastey::paste! {
+                $crate::__private::paste! {
                     pub fn [<$variant:lower>]($($($field : $ftype),*)?) -> Self {
                         let instance = Self::$variant $( { $($field),* } )?;
                         $crate::macros::call_error_hook(

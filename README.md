@@ -43,6 +43,8 @@ Common optional features:
 - `tracing`: enables the `tracing` adapter
 - `jitter`: enables ±20% jitter in `ExponentialBackoff` (pulls in `rand`)
 
+With default features, `error-forge` brings in no third-party crates: its only always-on dependency is its own `error-forge-derive`, which has no dependencies of its own unless the `derive` feature is on. The optional features above add their third-party crates (`syn`, `quote` and `proc-macro2` for `derive`).
+
 The `console`, `backtrace`, `registry`, `collector` and `context` features exist but currently gate nothing: console formatting, the error-code registry, collectors and context wrapping are always compiled in, and no backtrace is captured automatically. They are kept so existing `Cargo.toml` files keep resolving; enabling them has no effect.
 
 ## Quick Start

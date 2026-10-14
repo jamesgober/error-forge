@@ -59,19 +59,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 
 [dependencies]
-# `pastey` is a drop-in fork of `paste`. The original `paste` crate
-# was archived by its author on 2024-10-07 (RUSTSEC-2024-0436,
-# "unmaintained"); `pastey` keeps the public `paste!` macro API and
-# behaviour, with the same `[<...>]` token-pasting and case-modifier
-# syntax `define_errors!` relies on.
-pastey = "0.2"
-# `parking_lot` provides a non-poisoning `Mutex` used by
-# `CircuitBreaker`'s internal state. The standard `std::sync::Mutex`
-# poisons on panic, which is incompatible with this crate's
-# error-handling premise; `parking_lot::Mutex` returns the guard
-# directly with no `Result` to unwrap.
-parking_lot = "0.12"
-error-forge-derive = {version = "1.0.2", path = "./error-forge-derive", optional = true }
+# The only always-on dependency, and an in-house one. With default
+# features off it is a dependency-free proc-macro crate that supplies
+# the identifier pasting `define_errors!` needs (it replaced the
+# third-party `pastey`, and before that `paste`). The `derive` feature
+# below turns on its `#[derive(ModError)]`, which brings in `syn`,
+# `quote` and `proc-macro2`.
+error-forge-derive = { version = "1.0.2", path = "./error-forge-derive", default-features = false }
 # Floors below are checked by the `minimal-versions` CI job: `serde`
 # 1.0.157 is the first release whose derive builds alongside the
 # `syn` 1 floor of `error-forge-derive`, `log` 0.4.4 the first whose
@@ -91,6 +85,11 @@ rand = { version = "0.8.5", optional = true }
 [features]
 default = []
 derive = ["error-forge-derive"]
+# Up to 1.0.2 `error-forge-derive` was an optional dependency and this
+# was the feature Cargo created for it. It is kept, with the same
+# meaning, so manifests that name it keep resolving and `derive` still
+# implies it: it compiles the derive macro, and `derive` re-exports it.
+error-forge-derive = ["error-forge-derive/derive"]
 serde = ["dep:serde"]
 # `console`, `backtrace`, `registry`, `collector` and `context` gate
 # nothing: the related APIs are always compiled in and no backtrace is
