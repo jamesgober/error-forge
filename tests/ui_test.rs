@@ -11,6 +11,7 @@ fn trybuild_ui_tests() {
     let cases = trybuild::TestCases::new();
     cases.pass("tests/ui/pass/define_errors_*.rs");
     cases.compile_fail("tests/ui/fail/define_errors_*.rs");
+    cases.compile_fail("tests/ui/fail/paste_*.rs");
     if cfg!(feature = "derive") {
         cases.pass("tests/ui/pass/derive_*.rs");
         cases.compile_fail("tests/ui/fail/derive_*.rs");

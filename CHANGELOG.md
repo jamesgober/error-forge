@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Minor release for `error-forge` and `error-forge-derive` (both `1.1.0`). With default features, `error-forge` no longer brings any third-party crate into a dependent's build: `cargo tree -e normal` lists 8 third-party crates for `1.0.2` on Windows, Linux and macOS and none for `1.1.0`. No public item is removed, renamed or changed, and default features stay `[]`.
+
+### Added
+
+- `error-forge-derive` has a `derive` feature, on by default, that gates `#[derive(ModError)]` and the `syn`, `quote` and `proc-macro2` dependencies. Without it the crate has no dependencies.
+- `error-forge` declares its `error-forge-derive` feature explicitly. Cargo created it implicitly while `error-forge-derive` was an optional dependency; it keeps its meaning (it compiles the derive macro, and `derive` implies it), so manifests that name it keep resolving.
+- CI checks that the default `error-forge` dependency graph contains no third-party crate on any target.
+
+### Changed
+
+- `define_errors!` builds its constructor names (`fn [<Variant:lower>]`) with an internal identifier-pasting macro in `error-forge-derive` instead of the third-party `pastey` crate. Constructor names, spans and error messages for invalid names (a variant such as `Type` whose lowercase name is a keyword) are unchanged. The macro is reachable as `error_forge::__private::paste!`, which is not public API; the hidden `error_forge::__private::pastey` re-export is gone.
+- `error-forge-derive` is now an always-on dependency of `error-forge`, with its default features off. The `derive` feature enables `error-forge-derive/derive` through the `error-forge-derive` feature.
+- `CircuitBreaker` uses `std::sync::Mutex` instead of `parking_lot::Mutex`. Every acquisition goes through `PoisonError::into_inner`, so no method can panic on a poisoned lock, as before. `CircuitBreaker` is now `UnwindSafe` and `RefUnwindSafe`.
+- `CircuitBreaker::execute` takes its lock once instead of twice for a successful call in the closed state; only the half-open probe takes it again. Against `1.0.2` (release build, no-op closure): uncontended `execute` is 17% faster on Windows and 20% faster on Linux (41.2 to 34.2 ns, 38.9 to 31.3 ns); eight threads sharing one breaker are 47% faster on Windows and 10% faster on Linux.
+- A clean debug build of a crate that depends on `error-forge` with default features takes 0.78 s instead of 1.09 s on 32 jobs and 0.99 s instead of 2.67 s on one job (median of five, Windows, `CARGO_INCREMENTAL=0`).
+- `docs/STABILITY.md` lists the new dependency set and narrows the dependency rules to what dependents can observe: adding a third-party dependency outside an opt-in feature is still a `2.0.0` change; removing one whose types are not in the public API is not. `docs/architecture.md`, `docs/COMPARISON.md`, `docs/migration.md`, `SECURITY.md` and the README describe the new dependencies.
+- `error-forge-derive`'s `#[derive(ModError)]` implementation moved from `src/lib.rs` to `src/mod_error.rs`. No behaviour change.
+
+### Removed
+
+- The `pastey` and `parking_lot` dependencies, and with them `lock_api`, `parking_lot_core`, `scopeguard`, `smallvec`, `cfg-if` and `windows-link` (Windows) or `libc` (Unix) from every dependent's build. None of their types appear in the public API.
+
 ## [1.0.2] - 2026-10-08
 
 Patch release for `error-forge` and `error-forge-derive` (both `1.0.2`). Bug fixes, hygiene and build-time improvements; no public item added, removed or renamed (`cargo semver-checks` against `1.0.1`: 222 checks pass). Some inputs that compiled but silently produced wrong output are now compile errors; see **Changed**.

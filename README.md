@@ -29,7 +29,7 @@ It ships with a built-in `AppError`, a declarative `define_errors!` macro, an op
 
 ```toml
 [dependencies]
-error-forge = "1.0.2"
+error-forge = "1.1.0"
 ```
 
 MSRV: Rust `1.81`. CI builds and tests the crate on the exact `1.81.0` toolchain.
@@ -42,6 +42,8 @@ Common optional features:
 - `log`: enables the `log` adapter
 - `tracing`: enables the `tracing` adapter
 - `jitter`: enables ±20% jitter in `ExponentialBackoff` (pulls in `rand`)
+
+With default features, `error-forge` brings in no third-party crates: its only always-on dependency is its own `error-forge-derive`, which has no dependencies of its own unless the `derive` feature is on. The optional features above add their third-party crates (`syn`, `quote` and `proc-macro2` for `derive`).
 
 The `console`, `backtrace`, `registry`, `collector` and `context` features exist but currently gate nothing: console formatting, the error-code registry, collectors and context wrapping are always compiled in, and no backtrace is captured automatically. They are kept so existing `Cargo.toml` files keep resolving; enabling them has no effect.
 
