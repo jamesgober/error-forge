@@ -61,6 +61,18 @@ jobs:
       # the tests gated on those features only run here.
       - name: Test all features
         run: cargo test --workspace --all-features
+      # With default features `error-forge` must not pull any
+      # third-party crate into a dependent's build, on any target.
+      # `error-forge-derive` is in-house and dependency-free without
+      # its `derive` feature.
+      - name: Default dependency graph has no third-party crates
+        run: |
+          deps=$(cargo tree -p error-forge -e normal --target all --prefix none --locked             | sort -u | grep -v -E '^error-forge(-derive)? v' || true)
+          if [ -n "$deps" ]; then
+            echo "Third-party crates in the default build of error-forge:"
+            echo "$deps"
+            exit 1
+          fi
 
   docs:
     runs-on: ubuntu-latest

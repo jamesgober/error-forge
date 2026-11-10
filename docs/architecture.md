@@ -126,7 +126,7 @@ behaviour with their async runtime's retry helper.
 The blocking sleep is fine for worker-thread code, batch jobs,
 and CLI tools — all of which are valid `error-forge` use cases.
 
-## `CircuitBreaker` uses `parking_lot::Mutex` (since `1.0`)
+## `CircuitBreaker` never panics on a poisoned lock
 
 `0.9.x` used `std::sync::Mutex` with `.unwrap()` on every
 `lock()`. A panic anywhere inside the `execute(|| ...)` closure
@@ -134,8 +134,25 @@ would poison the mutex, and every subsequent `execute` would
 panic at unwrap. That's the opposite of what an error-handling
 crate should ship.
 
-`parking_lot::Mutex` has no poisoning. The cost is one extra
-runtime dep, which is acceptable for the correctness guarantee.
+`1.0` switched to `parking_lot::Mutex`, which has no poisoning.
+`1.1` goes back to `std::sync::Mutex` without the panic: the
+closure runs outside the lock (a panicking probe is handled by a
+drop guard), the lock only covers short updates of the breaker's
+own fields, and every acquisition goes through
+`PoisonError::into_inner`, so a poisoned lock is used as-is. That
+removed `parking_lot` and its six transitive crates from
+every dependent's build.
+
+A successful call admitted in the closed state takes the lock
+once (admission); only the half-open probe takes it again to close
+the circuit. Measured on 1.1 against 1.0.2 (one breaker, no-op
+closure, release build): uncontended `execute` 17% faster on Windows
+and 20% faster on Linux; eight threads on one breaker about 47% faster on
+Windows and 10% faster on Linux. With the same single-lock code,
+`parking_lot` was within 1 ns uncontended, about 20 ns per call
+faster under the eight-thread load on Linux and about 80 ns slower
+on Windows; next to the I/O a circuit breaker guards, neither
+difference matters.
 
 ## `CodedError::new` is now allocation-only (since `1.0`)
 

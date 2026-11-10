@@ -1,0 +1,23 @@
+error: expected `lower` or `upper`
+ --> tests/ui/fail/paste_bad_modifier.rs:4:15
+  |
+4 |     fn [<Name:snake>]() {}
+  |               ^^^^^
+
+error: expected `:lower` or `:upper`
+ --> tests/ui/fail/paste_bad_modifier.rs:8:14
+  |
+8 |     fn [<Name::lower>]() {}
+  |              ^
+
+error: expected an identifier in `[< ... >]`
+  --> tests/ui/fail/paste_bad_modifier.rs:12:10
+   |
+12 |     fn [<"text">]() {}
+   |          ^^^^^^
+
+error: expected `:lower` or `:upper`
+  --> tests/ui/fail/paste_bad_modifier.rs:16:14
+   |
+16 |     fn [<Name:>]() {}
+   |              ^

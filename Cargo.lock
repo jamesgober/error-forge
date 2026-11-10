@@ -39,13 +39,11 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "error-forge"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "error-forge-derive",
  "log",
- "parking_lot",
- "pastey",
  "rand",
  "serde",
  "serde_json",
@@ -56,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "error-forge-derive"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -168,12 +166,6 @@ dependencies = [
  "smallvec",
  "windows-link",
 ]
-
-[[package]]
-name = "pastey"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pin-project-lite"

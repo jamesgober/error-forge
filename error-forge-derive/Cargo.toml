@@ -1,6 +1,6 @@
 [package]
 name = "error-forge-derive"
-version = "1.0.2"
+version = "1.1.0"
 edition = "2021"
 rust-version = "1.81"
 description = "Derive macros for the error-forge crate"
@@ -15,10 +15,19 @@ authors = [
 [lib]
 proc-macro = true
 
+[features]
+# `derive` provides `#[derive(ModError)]` and is the only part of this
+# crate that needs `syn`, `quote` and `proc-macro2`. It is on by default
+# so direct users of this crate keep the derive. `error-forge` depends
+# on this crate with default features off: the identifier-pasting macro
+# behind `define_errors!` is always compiled and has no dependencies.
+default = ["derive"]
+derive = ["dep:syn", "dep:quote", "dep:proc-macro2"]
+
 [dependencies]
 # Floors checked with `cargo update -Z direct-minimal-versions` (see the
 # `minimal-versions` CI job): `syn` 1.0.3 adds `Path::get_ident`, and
 # `quote` / `proc-macro2` match what `async-trait` needs in the same graph.
-syn = "1.0.3"
-quote = "1.0.29"
-proc-macro2 = "1.0.63"
+syn = { version = "1.0.3", optional = true }
+quote = { version = "1.0.29", optional = true }
+proc-macro2 = { version = "1.0.63", optional = true }

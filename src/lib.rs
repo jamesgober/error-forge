@@ -97,7 +97,7 @@ pub use crate::macros::{
 
 // Optional re-export of the proc macro
 #[cfg(feature = "derive")]
-pub use error_forge_derive::*;
+pub use error_forge_derive::ModError;
 
 /// Internal re-exports for use by macros expanded in user crates.
 ///
@@ -109,7 +109,7 @@ pub use error_forge_derive::*;
 /// `Cargo.toml`.
 #[doc(hidden)]
 pub mod __private {
-    pub use pastey;
+    pub use error_forge_derive::__paste as paste;
 }
 
 // Extension methods are implemented in error.rs

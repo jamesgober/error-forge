@@ -81,7 +81,9 @@ attributes. Zero runtime cost.
 ### Things `thiserror` does that `error-forge` doesn't
 
 - **Pure compile-time.** No runtime dependency at all.
-  `error-forge` has runtime deps (`pastey`, `parking_lot`).
+  `error-forge` has one always-on dependency, its own
+  dependency-free `error-forge-derive`, compiled as a proc
+  macro.
 - **Standard error-attribute syntax.** Every Rust dev knows
   `#[error("...")]`.
 - **Zero metadata.** Just `Error` + `Display`. Nothing more,
@@ -217,9 +219,10 @@ mirror the `anyhow` discussion above.
 The cases where `error-forge` is clearly *not* the right
 choice:
 
-1. **You want zero runtime deps.** `error-forge` has two
-   always-on deps (`pastey`, `parking_lot`) and
-   optional deps behind opt-in features. `thiserror` alone has
+1. **You want zero runtime deps.** `error-forge` has one
+   always-on dependency (its own `error-forge-derive`, with no
+   dependencies of its own unless `derive` is on) and optional
+   third-party deps behind opt-in features. `thiserror` alone has
    zero runtime cost; choose it if dep footprint is the
    constraint.
 

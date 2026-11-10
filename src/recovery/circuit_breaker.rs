@@ -1,6 +1,5 @@
 use crate::recovery::RecoveryResult;
-use parking_lot::Mutex;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 /// Represents the current state of a circuit breaker.
@@ -90,6 +89,17 @@ impl CircuitBreakerConfig {
     }
 }
 
+/// Lock the breaker state, ignoring poisoning.
+///
+/// The protected closure never runs while the lock is held; the lock
+/// only covers short updates of the breaker's own fields, each of which
+/// leaves the state valid. Taking a poisoned lock anyway keeps every
+/// method panic-free, as the non-poisoning `parking_lot` lock used up to
+/// 1.0.2 did.
+fn lock(inner: &Mutex<CircuitBreakerInner>) -> MutexGuard<'_, CircuitBreakerInner> {
+    inner.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 struct CircuitBreakerInner {
     config: CircuitBreakerConfig,
     state: CircuitState,
@@ -158,7 +168,7 @@ struct ProbeGuard<'a> {
 impl Drop for ProbeGuard<'_> {
     fn drop(&mut self) {
         if self.armed {
-            let mut inner = self.inner.lock();
+            let mut inner = lock(self.inner);
             if inner.is_current_probe(self.admission) {
                 inner.probe_in_flight = false;
                 inner.transition(CircuitState::Open, Instant::now());
@@ -206,7 +216,7 @@ impl CircuitBreaker {
     /// call is admitted as the probe. Reading the state does not
     /// change it.
     pub fn state(&self) -> CircuitState {
-        let inner = self.inner.lock();
+        let inner = lock(&self.inner);
         inner.effective_state(Instant::now())
     }
 
@@ -252,7 +262,7 @@ impl CircuitBreaker {
     {
         // First check if we can proceed with the call
         let admission = {
-            let mut inner = self.inner.lock();
+            let mut inner = lock(&self.inner);
             self.update_state(&mut inner);
             let is_probe = match inner.state {
                 CircuitState::Closed => false,
@@ -295,7 +305,7 @@ impl CircuitBreaker {
 
     /// Manually reset the circuit breaker to closed state
     pub fn reset(&self) {
-        let mut inner = self.inner.lock();
+        let mut inner = lock(&self.inner);
         inner.transition(CircuitState::Closed, Instant::now());
         inner.failures.clear();
         inner.probe_in_flight = false;
@@ -303,7 +313,12 @@ impl CircuitBreaker {
 
     /// Called when an operation succeeds
     fn on_success(&self, admission: Admission) {
-        let mut inner = self.inner.lock();
+        // Only the half-open probe changes state on success, so a normal
+        // call returns without taking the lock a second time.
+        if !admission.is_probe {
+            return;
+        }
+        let mut inner = lock(&self.inner);
         if inner.is_current_probe(admission) {
             // Successful test request, close the circuit
             inner.probe_in_flight = false;
@@ -314,7 +329,7 @@ impl CircuitBreaker {
 
     /// Called when an operation fails
     fn on_failure(&self, admission: Admission) {
-        let mut inner = self.inner.lock();
+        let mut inner = lock(&self.inner);
 
         if admission.is_probe {
             if inner.is_current_probe(admission) {

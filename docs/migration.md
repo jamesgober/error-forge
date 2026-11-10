@@ -315,6 +315,11 @@ were carrying `paste` in their own `Cargo.toml` purely to
 satisfy `define_errors!` can remove it; `error-forge` carries
 the dep transitively.
 
+`1.1.0` replaces `pastey` with an internal macro in
+`error-forge-derive` (`error_forge::__private::paste!`); the
+`__private::pastey` path no longer exists. Nothing outside
+`define_errors!` should use either path.
+
 ### 10. `atty` dep removed, MSRV declared `1.81`
 
 Shipped in `0.9.8`, summarised here for completeness:

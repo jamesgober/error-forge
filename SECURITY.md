@@ -50,13 +50,14 @@ Security-relevant issues include but are not limited to:
 
 - Memory safety bugs (use-after-free, double-free, OOB access)
   — even though `error-forge` has no `unsafe` of its own, a bug
-  that triggers UB in `parking_lot`, `pastey`, or the standard
-  library through our usage qualifies.
+  that triggers UB in a dependency or the standard library
+  through our usage qualifies.
 - Information leakage through panic payloads, error messages,
   or `Display` / `Debug` impls.
 - Denial of service via unbounded allocation, infinite loops,
-  or lock-poisoning cascades (the `CircuitBreaker` uses
-  `parking_lot::Mutex` specifically to avoid the latter).
+  or lock-poisoning cascades (the `CircuitBreaker` takes its
+  lock through `PoisonError::into_inner` specifically to avoid
+  the latter).
 - Logic bugs in the `recovery` primitives that produce
   incorrect retry / circuit-breaker behaviour under
   adversarial input.
