@@ -26,7 +26,7 @@ Minor release for `error-forge` and `error-forge-derive` (both `1.1.0`). With de
 - A clean debug build of a crate that depends on `error-forge` with default features takes 0.78 s instead of 1.09 s on 32 jobs and 0.99 s instead of 2.67 s on one job (median of five, Windows, `CARGO_INCREMENTAL=0`).
 - `docs/STABILITY.md` lists the new dependency set and narrows the dependency rules to what dependents can observe: adding a third-party dependency outside an opt-in feature is still a `2.0.0` change; removing one whose types are not in the public API is not. `docs/architecture.md`, `docs/COMPARISON.md`, `docs/migration.md`, `SECURITY.md` and the README describe the new dependencies.
 - `error-forge-derive`'s `#[derive(ModError)]` implementation moved from `src/lib.rs` to `src/mod_error.rs`. No behaviour change.
-- The lockfile takes `tokio` 1.54 (a dev-dependency, used by the tests only) for RUSTSEC-2026-0386; nothing in either crate uses `AsyncFd`.
+- The lockfile takes `tokio` 1.53.3 (a dev-dependency, used by the tests only, #19) for RUSTSEC-2026-0386; nothing in either crate uses `AsyncFd`.
 
 ### Removed
 
