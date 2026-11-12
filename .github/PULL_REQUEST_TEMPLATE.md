@@ -22,8 +22,7 @@
 ## CHANGELOG
 
 - [ ] I added an entry under `## [Unreleased]` in `CHANGELOG.md`
-      describing the user-visible effect of this change, per
-      [`.dev/DIRECTIVES.md`](../.dev/DIRECTIVES.md) §D-1.
+      describing the user-visible effect of this change.
 
 ## Local verification
 

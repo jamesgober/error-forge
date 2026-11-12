@@ -39,7 +39,7 @@ Before tagging:
 - [ ] The main crate's `[dependencies]` entry for
       `error-forge-derive` matches the new version exactly.
 - [ ] `README.md` install snippet shows the new version.
-- [ ] `.dev/release/vX.Y.Z.md` exists and describes the release.
+- [ ] Release notes for the new version are written.
 
 ## Local verification gate
 
@@ -69,8 +69,7 @@ actually published. That's expected — dry-run the main crate
 
 ```bash
 git add Cargo.toml error-forge-derive/Cargo.toml \
-        README.md CHANGELOG.md src/ docs/ benches/ examples/ \
-        .dev/release/vX.Y.Z.md
+        README.md CHANGELOG.md src/ docs/ benches/ examples/
 git commit -m "Release vX.Y.Z"
 
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
@@ -108,7 +107,7 @@ retry.
 ## Post-release
 
 - [ ] GitHub release created with body lifted from
-      `.dev/release/vX.Y.Z.md`. Title: `vX.Y.Z — <summary>`.
+      the release notes. Title: `vX.Y.Z — <summary>`.
 - [ ] crates.io page renders (`https://crates.io/crates/error-forge`).
 - [ ] docs.rs build succeeds
       (`https://docs.rs/error-forge/X.Y.Z`).
@@ -156,6 +155,5 @@ new tag has not yet been pushed).
 
 ## Pre-1.0 history
 
-Pre-1.0 release notes live in `.dev/release/v0.x.y.md`.
 Pre-1.0 releases occasionally skipped this ceremony; `1.0.0`
 formalises it.
