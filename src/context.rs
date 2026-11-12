@@ -129,8 +129,11 @@ impl<E: ForgeError, C: fmt::Display + fmt::Debug + Send + Sync + 'static> ForgeE
         self.error.exit_code()
     }
 
+    /// The inner error's [`user_message`](ForgeError::user_message).
+    /// The context is left out: it is developer text and may carry
+    /// data (paths, ids). It is in `Display` and `dev_message`.
     fn user_message(&self) -> String {
-        format!("{}: {}", self.context, self.error.user_message())
+        self.error.user_message()
     }
 
     fn dev_message(&self) -> String {

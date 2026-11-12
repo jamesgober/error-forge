@@ -112,9 +112,11 @@ pub trait AsyncForgeError: StdError + Send + Sync + 'static {
         1
     }
 
-    /// Returns a user-facing message that can be shown to end users.
+    /// Returns a message that is safe to show to end users: the
+    /// [`caption`](Self::caption) by default, never the error's data.
+    /// See [`ForgeError::user_message`](crate::ForgeError::user_message).
     fn user_message(&self) -> String {
-        self.to_string()
+        self.caption().to_string()
     }
 
     /// Returns a detailed technical message for developers/logs.

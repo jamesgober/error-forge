@@ -67,19 +67,42 @@ pub fn log_error(error: &dyn ForgeError) {
     }
 }
 
+/// `text` with control characters (newlines, carriage returns, escape
+/// sequences) written as escapes, so a value from user input cannot start
+/// a forged log line or recolour a terminal. Used by the log adapters.
+#[cfg(any(feature = "log", feature = "tracing"))]
+fn escape_controls(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.chars().any(char::is_control) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 8);
+    for ch in text.chars() {
+        if ch.is_control() {
+            out.extend(ch.escape_default());
+        } else {
+            out.push(ch);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// Standard logging implementation for common logging crates
 #[cfg(feature = "log")]
 pub mod log_impl {
     use super::*;
     use log::{debug, error, info, warn};
 
-    /// A logger that uses the `log` crate
+    /// A logger that uses the `log` crate. The error's
+    /// [`dev_message`](ForgeError::dev_message) is written with control
+    /// characters escaped, so a newline in user input cannot forge a
+    /// log line.
     pub struct LogAdapter;
 
     impl ErrorLogger for LogAdapter {
         fn log_error(&self, error: &dyn ForgeError, level: ErrorLevel) {
             let kind = error.kind();
             let message = error.dev_message();
+            let message = escape_controls(&message);
             match level {
                 ErrorLevel::Critical => {
                     error!(target: "error-forge", "[CRITICAL] [{kind}] {message}")
@@ -122,27 +145,29 @@ pub mod tracing_impl {
     ///
     /// Each error becomes one event with the fields `kind` (from
     /// [`ForgeError::kind`]) and `dev_message` (from
-    /// [`ForgeError::dev_message`]); the event message is the level
-    /// name (`"Error"`, `"Warning"`, ...).
+    /// [`ForgeError::dev_message`], with control characters escaped);
+    /// the event message is the level name (`"Error"`, `"Warning"`, ...).
     pub struct TracingAdapter;
 
     impl ErrorLogger for TracingAdapter {
         fn log_error(&self, error: &dyn ForgeError, level: ErrorLevel) {
+            let dev_message = error.dev_message();
+            let dev_message = escape_controls(&dev_message);
             match level {
                 ErrorLevel::Critical => {
-                    error!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Critical error")
+                    error!(target: "error-forge", kind = %error.kind(), dev_message = %dev_message, "Critical error")
                 }
                 ErrorLevel::Error => {
-                    error!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Error")
+                    error!(target: "error-forge", kind = %error.kind(), dev_message = %dev_message, "Error")
                 }
                 ErrorLevel::Warning => {
-                    warn!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Warning")
+                    warn!(target: "error-forge", kind = %error.kind(), dev_message = %dev_message, "Warning")
                 }
                 ErrorLevel::Info => {
-                    info!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Info")
+                    info!(target: "error-forge", kind = %error.kind(), dev_message = %dev_message, "Info")
                 }
                 ErrorLevel::Debug => {
-                    debug!(target: "error-forge", kind = %error.kind(), dev_message = %error.dev_message(), "Debug")
+                    debug!(target: "error-forge", kind = %error.kind(), dev_message = %dev_message, "Debug")
                 }
             }
         }
@@ -312,5 +337,17 @@ mod tests {
         assert!(!captured_logs.is_empty());
         assert!(captured_logs[0].contains("[Config]"));
         assert!(captured_logs[0].contains("Test error"));
+    }
+}
+
+#[cfg(all(test, any(feature = "log", feature = "tracing")))]
+mod escape_tests {
+    use super::escape_controls;
+
+    #[test]
+    fn control_characters_are_escaped() {
+        assert_eq!(escape_controls("plain text"), "plain text");
+        assert_eq!(escape_controls("bad\nINFO forged"), "bad\\nINFO forged");
+        assert_eq!(escape_controls("a\r\u{1b}[31mb"), "a\\r\\u{1b}[31mb");
     }
 }

@@ -118,9 +118,8 @@ line and are removed only in `2.0.0`.
 
 ## Panic safety
 
-The crate panics in exactly one place by design: hook
-registration is per-process, and a corrupt registry state would
-be a bug. Specifically:
+No public API panics through normal use, hook registration
+included. Specifically:
 
 - `AppError` and `define_errors!` constructors never panic
   through normal use.
@@ -170,7 +169,8 @@ The following runtime dependencies are sealed for the `1.x` line:
 - `log` (optional, gated on `log` feature).
 - `tracing` (optional, gated on `tracing` feature).
 - `async-trait` (optional, gated on `async` feature).
-- `rand` (optional, gated on `jitter` feature).
+- None for jitter: since 1.2.0 the `jitter` feature pulls in no crate
+  (`rand` was removed).
 
 With default features the dependency graph contains no
 third-party crate. Adding a third-party runtime dependency that is

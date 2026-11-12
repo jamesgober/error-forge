@@ -29,7 +29,7 @@ It ships with a built-in `AppError`, a declarative `define_errors!` macro, an op
 
 ```toml
 [dependencies]
-error-forge = "1.1.0"
+error-forge = "1.2.0"
 ```
 
 MSRV: Rust `1.81`. CI builds and tests the crate on the exact `1.81.0` toolchain.
@@ -41,7 +41,7 @@ Common optional features:
 - `serde`: enables serialization support where compatible
 - `log`: enables the `log` adapter
 - `tracing`: enables the `tracing` adapter
-- `jitter`: enables ±20% jitter in `ExponentialBackoff` (pulls in `rand`)
+- `jitter`: turns ±20% jitter on by default for the exponential `RetryExecutor` and `RetryPolicy` (no dependency; `ExponentialBackoff::with_jitter` works without it)
 
 With default features, `error-forge` brings in no third-party crates: its only always-on dependency is its own `error-forge-derive`, which has no dependencies of its own unless the `derive` feature is on. The optional features above add their third-party crates (`syn`, `quote` and `proc-macro2` for `derive`).
 
@@ -242,7 +242,7 @@ fn main() {
 }
 ```
 
-The hook runs on the thread that created the error. Errors created inside the hook itself (for example by a failing log sink) do not call it again, and a panic inside the hook is caught so it does not unwind through the error constructor.
+The hook runs on the thread that created the error. Errors created inside the hook itself (for example by a failing log sink) do not call it again, and, when the program is built with `panic = "unwind"` (the default), a panic inside the hook is caught so it does not unwind through the error constructor. Under `panic = "abort"` a panicking hook aborts the process. The hook runs synchronously on every error construction, so it must not panic or block: hand slow work (a remote sink) to another thread.
 
 ### Logging Adapters
 

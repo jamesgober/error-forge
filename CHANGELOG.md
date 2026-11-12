@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-12
+
+Minor release for `error-forge` and `error-forge-derive` (both `1.2.0`), with fixes from an independent review. No public item is removed or changes signature. Two documented behaviours change; see Changed. `error-forge-derive` has no code changes and is versioned with the main crate.
+
+### Fixed
+
+- **A circuit-breaker probe that never returns no longer locks the breaker.** A half-open probe that runs longer than the new `CircuitBreakerConfig::probe_timeout_ms` (default: the reset timeout) counts as failed: the circuit reopens and admits a new probe after the next reset timeout, and the hung probe's late result is ignored. Before, every call failed fast until a manual `reset()`.
+- **The retry executor can jitter.** `RetryExecutor::with_backoff(impl Backoff)` takes any backoff (a configured `ExponentialBackoff` included), and `RetryExecutor::with_jitter` and `RetryPolicy::with_jitter` turn ±20% jitter on for the exponential schedule. Before, every executor used the same fixed 100, 200, 400 ms schedule, so retriers across a fleet woke in step.
+- **Jitter no longer piles delays onto the cap.** A jittered delay is drawn from 80% to 120% of the calculated delay but never above the maximum, instead of being clamped onto it, which put about half of all delays at the cap on exactly the same instant.
+- **Failure tracking stays linear.** The breaker keeps its failure times in a `VecDeque`, drops expired ones from the front, and keeps at most `failure_threshold` of them, instead of scanning a growing list under the lock on every failure.
+
+### Security
+
+- **`ForgeError::user_message` no longer carries the error's data.** It was documented as safe to show end users but defaulted to the full `Display` text, which carries file paths, endpoints (with any credentials in them), source errors and field values. The default is now the error's `caption()`. `AsyncForgeError::user_message` changes the same way, and `ContextError::user_message` leaves its context out. `Display`, `Debug` and `dev_message()` are unchanged and keep the detail for logs. Override `user_message` to show a message you have checked.
+- **`Redacted<T>`**: a wrapper that prints as `[redacted]` in `Display`, `Debug` and `serde` output, so secrets held in an error stay out of error text and logs.
+- **The `log` and `tracing` adapters escape control characters** in `dev_message`, so a newline in user input cannot start a forged log line.
+- `#![forbid(unsafe_code)]` at the crate root (there was no unsafe code).
+
+### Added
+
+- `CircuitBreakerConfig::probe_timeout_ms` and `with_probe_timeout_ms`.
+- `CircuitBreaker::is_probing`, which tells a running probe (calls fail fast) from a half-open circuit whose next call will be the probe.
+- `RetryExecutor::with_backoff`, `RetryExecutor::with_jitter`, `RetryPolicy::with_jitter`.
+- `Redacted<T>`.
+
+### Changed
+
+- `user_message()` defaults to the caption (see Security).
+- A panic in a closure run by `CircuitBreaker::execute` in the closed state now counts as a failure, as an `Err` does. Before, only a panicking probe was recorded.
+- The `jitter` feature no longer pulls in `rand`: jitter uses an in-crate generator and works with or without the feature. The feature now turns jitter on by default for the exponential `RetryExecutor` and `RetryPolicy`.
+
+### Docs
+
+- The circuit breaker documents that it counts failures, not a failure rate, and that closures need their own I/O timeouts.
+- The hook docs say a panicking hook is caught only under `panic = "unwind"`, and that hooks must not panic or block.
+- `docs/STABILITY.md` no longer says the crate panics in one place (it does not), and lists no jitter dependency. The stale `parking_lot` note in `Cargo.toml` is gone.
+
+
 ## [1.1.0] - 2026-11-09
 
 Minor release for `error-forge` and `error-forge-derive` (both `1.1.0`). With default features, `error-forge` no longer brings any third-party crate into a dependent's build: `cargo tree -e normal` lists 8 third-party crates for `1.0.2` on Windows, Linux and macOS and none for `1.1.0`. No public item is removed, renamed or changed, and default features stay `[]`.
@@ -279,7 +317,8 @@ Initial public release with core functionality.
 - Error hook system with severity levels
 - Zero external dependencies design
 
-[Unreleased]: https://github.com/jamesgober/error-forge/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jamesgober/error-forge/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jamesgober/error-forge/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jamesgober/error-forge/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/jamesgober/error-forge/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jamesgober/error-forge/compare/v1.0.0...v1.0.1

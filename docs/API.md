@@ -28,7 +28,7 @@ examples that use `#[derive(ModError)]` or `AsyncForgeError` need the
 | `serde` | `Serialize` on `AppError` |
 | `log` | `logging::log_impl` adapter |
 | `tracing` | `logging::tracing_impl` adapter |
-| `jitter` | ±20% jitter in `ExponentialBackoff::with_jitter` (pulls in `rand`) |
+| `jitter` | Jitter on by default for the exponential `RetryExecutor` and `RetryPolicy`. No dependency since 1.2.0; `ExponentialBackoff::with_jitter` works without it. |
 | `console`, `backtrace`, `registry`, `collector`, `context` | Reserved. They currently gate nothing; the related APIs are always available. |
 
 `define_errors!` adds `#[cfg_attr(feature = "serde", derive(serde::Serialize))]`
@@ -51,7 +51,7 @@ pub trait ForgeError: std::error::Error + Send + Sync + 'static {
     fn is_fatal(&self) -> bool { false }
     fn status_code(&self) -> u16 { 500 }
     fn exit_code(&self) -> i32 { 1 }
-    fn user_message(&self) -> String { self.to_string() }
+    fn user_message(&self) -> String { self.caption().to_string() }
     fn dev_message(&self) -> String { format!("[{}] {}", self.kind(), self) }
     fn backtrace(&self) -> Option<&Backtrace> { None }
     // The real default forwards to the registered error hook.
@@ -65,6 +65,19 @@ Key defaults:
 - `is_fatal()`: `false`
 - `status_code()`: `500`
 - `exit_code()`: `1`
+- `user_message()`: the caption. Safe to show end users: it never carries the error's data. Until 1.1.0 the default was the full `Display` text, which carries paths, endpoints (with any credentials in them), source errors and field values. `Display`, `Debug` and `dev_message()` still carry all of that, so keep them for logs, and override `user_message()` to show a message you have checked.
+
+### `Redacted`
+
+`Redacted<T>` prints as `[redacted]` in `Display`, `Debug` and (with `serde`) when serialised. Wrap passwords, tokens and personal data held in an error so they never reach error text or logs; read the value with `expose()` or `into_inner()`. The default `define_errors!` format prints fields with `Debug`, so a `Redacted` field prints as `[redacted]` there too. It changes printing only; it does not wipe memory. Since 1.2.0.
+
+```rust
+use error_forge::Redacted;
+
+let token = Redacted::new(String::from("hunter2"));
+assert_eq!(token.to_string(), "[redacted]");
+assert_eq!(token.expose(), "hunter2");
+```
 
 ### `AppError`
 
@@ -402,7 +415,7 @@ Available in `error_forge::macros` (and re-exported at the crate root):
 
 `call_error_hook(...)` is hidden and used by generated code. Only one hook can be installed per process; `try_register_error_hook(...)` returns an error if a hook was already installed. Every `AppError` and `define_errors!` constructor calls the hook, as does `ForgeError::register`.
 
-The hook is not re-entered: an error created while the hook runs on the same thread (for example by a log sink that fails) does not call it again. A panic inside the hook is caught and discarded so it does not unwind through the constructor that fired it; the process panic hook still reports it.
+The hook is not re-entered: an error created while the hook runs on the same thread (for example by a log sink that fails) does not call it again. With `panic = "unwind"` (the default), a panic inside the hook is caught and discarded so it does not unwind through the constructor that fired it; the process panic hook still reports it. With `panic = "abort"` nothing can catch it and the process aborts. The hook runs synchronously on every construction, so it must not panic or block.
 
 ```rust
 use error_forge::{try_register_error_hook, AppError, ErrorLevel};
@@ -510,6 +523,8 @@ The recovery APIs are synchronous.
 
 Every strategy implements the `Backoff` trait (`next_delay(attempt)`). Delays never exceed the configured maximum.
 
+`with_jitter(true)` draws each exponential delay uniformly from 80% to 120% of the calculated delay, and never above the maximum: near the cap the range ends at the maximum itself, so delays at the cap stay spread out. Since 1.2.0 jitter needs no dependency and works with or without the `jitter` feature.
+
 ```rust
 use error_forge::recovery::{Backoff, ExponentialBackoff, FixedBackoff, LinearBackoff};
 use std::time::Duration;
@@ -543,8 +558,10 @@ assert_eq!(fixed.next_delay(5), Duration::from_millis(200));
 - `forge_executor::<E>()` (retries only errors whose `is_retryable()` is true)
 - `retry(...)`
 - `RetryExecutor::with_retry_if(...)` and `retry_with_handler(...)`
+- `RetryExecutor::with_backoff(impl Backoff)`: any backoff, for example a configured `ExponentialBackoff` (since 1.2.0)
+- `RetryExecutor::with_jitter(bool)` and `RetryPolicy::with_jitter(bool)`: ±20% jitter on the exponential schedule (since 1.2.0). On by default when the `jitter` feature is enabled, off otherwise.
 
-`RetryExecutor` uses blocking sleeps, so it is best suited to sync workloads or dedicated worker threads.
+`RetryExecutor` uses blocking sleeps, so it is best suited to sync workloads or dedicated worker threads. When many clients retry the same dependency, turn jitter on so they do not retry in step.
 
 ```rust
 use error_forge::recovery::RetryPolicy;
@@ -586,13 +603,18 @@ assert_eq!(attempts.get(), 1);
 - `execute(...)`
 - `state()`
 - `reset()`
-- `CircuitBreakerConfig::new(threshold, window_ms, reset_ms)` or `CircuitBreakerConfig::default()` with `with_failure_threshold`, `with_failure_window_ms`, `with_reset_timeout_ms`
+- `is_probing()`: whether a half-open probe is running now (since 1.2.0)
+- `CircuitBreakerConfig::new(threshold, window_ms, reset_ms)` or `CircuitBreakerConfig::default()` with `with_failure_threshold`, `with_failure_window_ms`, `with_reset_timeout_ms`, `with_probe_timeout_ms` (since 1.2.0)
 
 States:
 
 - `Closed`: calls pass through and failures are counted inside the window
 - `Open`: calls fail fast with `CircuitOpenError`
-- `HalfOpen`: the reset timeout has elapsed; one probe call is admitted and others fail fast until it resolves
+- `HalfOpen`: the reset timeout has elapsed; one probe call is admitted and others fail fast until it resolves. `is_probing()` tells whether the probe is already running.
+
+The breaker counts failures, not a failure rate: `failure_threshold` failed calls inside `failure_window_ms` open it, however many calls succeeded. Every `Err` from the closure counts, and since 1.2.0 so does a panic in the closed state. At most `failure_threshold` failure times are kept.
+
+A probe that runs longer than `probe_timeout_ms` (default: `reset_timeout_ms`) counts as failed: the circuit reopens and admits a new probe after the next reset timeout, and the old probe's late result is ignored. The breaker cannot interrupt a closure, so give closures their own I/O timeouts.
 
 ```rust
 use error_forge::recovery::{CircuitBreaker, CircuitBreakerConfig, CircuitOpenError, CircuitState};
@@ -662,7 +684,7 @@ pub trait AsyncForgeError: Error + Send + Sync + 'static {
     fn is_fatal(&self) -> bool { false }
     fn status_code(&self) -> u16 { 500 }
     fn exit_code(&self) -> i32 { 1 }
-    fn user_message(&self) -> String { self.to_string() }
+    fn user_message(&self) -> String { self.caption().to_string() }
     fn dev_message(&self) -> String { format!("[{}] {}", self.kind(), self) }
     fn backtrace(&self) -> Option<&Backtrace> { None }
     async fn async_handle(&self) -> Result<(), Box<dyn Error + Send + Sync>> { Ok(()) }

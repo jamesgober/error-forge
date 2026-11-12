@@ -14,6 +14,15 @@
 //! - context wrapping, error codes, collectors, logging hooks, and console formatting
 //! - synchronous retry and circuit-breaker helpers in [`recovery`]
 //!
+//! ## Messages for users and for logs
+//!
+//! [`ForgeError::user_message`] is safe to show end users: by default it
+//! is the error's caption and never carries the error's data. `Display`,
+//! `Debug` and [`ForgeError::dev_message`] carry everything the error
+//! holds (paths, endpoints, source errors, field values), so keep them
+//! for logs, and wrap secrets in [`Redacted`] so they print as
+//! `[redacted]` even there.
+//!
 //! ## Quick Start
 //!
 //! ```
@@ -43,6 +52,8 @@
 //! let error = AppError::config("Database connection failed");
 //! print_error(&error);
 //! ```
+
+#![forbid(unsafe_code)]
 pub mod collector;
 pub mod console_theme;
 pub mod context;
@@ -51,6 +62,7 @@ pub mod group_macro;
 pub mod logging;
 pub mod macros;
 pub mod recovery;
+mod redacted;
 pub mod registry;
 
 #[cfg(feature = "async")]
@@ -61,6 +73,7 @@ pub mod async_error_impl;
 // Re-export core types and traits
 pub use crate::console_theme::{install_panic_hook, print_error, ConsoleTheme};
 pub use crate::error::{AppError, AppResult, ForgeError};
+pub use crate::redacted::Redacted;
 
 // Historical re-export. `Result` shadows `std::result::Result` in
 // glob imports; deprecated in favour of `AppResult`. Kept for
