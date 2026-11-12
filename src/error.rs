@@ -56,9 +56,30 @@ pub trait ForgeError: std::error::Error + Send + Sync + 'static {
         1
     }
 
-    /// Returns a user-facing message that can be shown to end users
+    /// Returns a message that is safe to show to end users.
+    ///
+    /// The default is the error's [`caption`](Self::caption): fixed
+    /// text per kind that never carries the error's data. `Display`,
+    /// [`dev_message`](Self::dev_message) and `Debug` do carry it (file
+    /// paths, endpoints with any credentials in them, source errors,
+    /// field values), so keep those for logs. Override this method to
+    /// show a message you have checked is safe, such as a validation
+    /// hint.
+    ///
+    /// Until 1.1.0 the default was the full `Display` text, which is
+    /// not safe to show.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use error_forge::{AppError, ForgeError};
+    ///
+    /// let error = AppError::network("https://user:secret@db.internal/prod", None);
+    /// assert!(!error.user_message().contains("secret"));
+    /// assert!(error.to_string().contains("db.internal"));
+    /// ```
     fn user_message(&self) -> String {
-        self.to_string()
+        self.caption().to_string()
     }
 
     /// Returns a detailed technical message for developers/logs

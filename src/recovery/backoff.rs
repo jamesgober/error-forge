@@ -1,7 +1,35 @@
-#[cfg(feature = "jitter")]
-use rand::Rng;
+use std::cell::Cell;
 use std::cmp::min;
+use std::collections::hash_map::RandomState;
+use std::hash::{BuildHasher, Hasher};
 use std::time::Duration;
+
+/// A uniform value in `[0, 1)` from a per-thread xorshift64* generator.
+///
+/// Delays only need to differ between processes and threads, not to be
+/// unpredictable, so no cryptographic source is needed. Each thread seeds
+/// its generator once from the standard library's randomly keyed hasher
+/// (seeded from the operating system once per process), so two processes
+/// or threads do not share a schedule.
+fn unit_random() -> f64 {
+    thread_local! {
+        static STATE: Cell<u64> = const { Cell::new(0) };
+    }
+    STATE.with(|state| {
+        let mut x = state.get();
+        if x == 0 {
+            let mut hasher = RandomState::new().build_hasher();
+            hasher.write_usize(state as *const Cell<u64> as usize);
+            x = hasher.finish() | 1;
+        }
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        state.set(x);
+        // The top 53 bits of the scrambled value, as a fraction.
+        (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64
+    })
+}
 
 /// Trait for backoff strategies used in retry mechanisms
 pub trait Backoff: Send + Sync + 'static {
@@ -64,12 +92,28 @@ impl ExponentialBackoff {
 
     /// Enable or disable ±20% jitter on each calculated delay.
     ///
-    /// Jitter applies to every attempt, including the first, and the
-    /// jittered delay is still capped at the maximum delay.
+    /// Jitter applies to every attempt, including the first. Each delay
+    /// is drawn uniformly from 80% to 120% of the calculated delay, and
+    /// never above the maximum delay: once the calculated delay nears the
+    /// maximum, the upper end of the range is the maximum itself, so
+    /// delays at the cap stay spread out instead of landing on it.
     ///
-    /// Jitter requires the `jitter` cargo feature; without it the
-    /// flag is silently ignored and every delay is the
-    /// non-jittered exponential value. Off by default.
+    /// Off by default. Since 1.2.0 jitter works with or without the
+    /// `jitter` cargo feature (it no longer needs `rand`); the feature
+    /// now turns jitter on by default for the exponential
+    /// [`RetryExecutor`](crate::recovery::RetryExecutor) and
+    /// [`RetryPolicy`](crate::recovery::RetryPolicy).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use error_forge::recovery::{Backoff, ExponentialBackoff};
+    /// use std::time::Duration;
+    ///
+    /// let backoff = ExponentialBackoff::new().with_jitter(true);
+    /// let delay = backoff.next_delay(0); // around the 100 ms initial delay
+    /// assert!(delay >= Duration::from_millis(80) && delay <= Duration::from_millis(120));
+    /// ```
     pub fn with_jitter(mut self, jitter: bool) -> Self {
         self.jitter = jitter;
         self
@@ -93,17 +137,14 @@ impl Backoff for ExponentialBackoff {
         };
         let capped_delay = min(calculated_delay, self.max_delay_ms);
 
-        // Jitter is only applied when both the `jitter` cargo feature
-        // is enabled AND the caller flipped `self.jitter = true`. With
-        // the feature off, jitter is a documented no-op so users who
-        // never want jitter avoid pulling in `rand`.
-        #[cfg(feature = "jitter")]
         if self.jitter {
-            let mut rng = rand::thread_rng();
-            let jitter_factor = rng.gen_range(0.8..1.2);
-            let jittered_delay = (capped_delay as f64 * jitter_factor) as u64;
-            // Jitter never pushes the delay past the configured cap.
-            return Duration::from_millis(min(jittered_delay, self.max_delay_ms));
+            // Uniform over [0.8 x delay, min(1.2 x delay, max)]: below the
+            // cap rather than clamped onto it, so delays at the cap do not
+            // pile up on one instant.
+            let low = capped_delay as f64 * 0.8;
+            let high = (capped_delay as f64 * 1.2).min(self.max_delay_ms as f64);
+            let jittered = low + (high - low).max(0.0) * unit_random();
+            return Duration::from_millis(min(jittered as u64, self.max_delay_ms));
         }
 
         Duration::from_millis(capped_delay)
@@ -224,5 +265,50 @@ impl Backoff for Box<dyn Backoff> {
 
     fn box_clone(&self) -> Box<dyn Backoff> {
         (**self).box_clone()
+    }
+}
+
+#[cfg(test)]
+mod jitter_tests {
+    use super::*;
+
+    #[test]
+    fn jitter_spreads_below_the_cap_instead_of_piling_on_it() {
+        let backoff = ExponentialBackoff::new()
+            .with_max_delay(30_000)
+            .with_jitter(true);
+        let draws: Vec<Duration> = (0..10_000).map(|_| backoff.next_delay(20)).collect();
+        let at_cap = draws
+            .iter()
+            .filter(|d| **d == Duration::from_millis(30_000))
+            .count();
+        // 1.1.0 put about half of all draws exactly on the cap.
+        assert!(at_cap < 100, "{at_cap} of 10000 draws exactly at the cap");
+        assert!(draws
+            .iter()
+            .all(|d| *d >= Duration::from_millis(24_000) && *d <= Duration::from_millis(30_000)));
+    }
+
+    #[test]
+    fn jitter_varies_between_draws_and_stays_in_band() {
+        let backoff = ExponentialBackoff::new().with_jitter(true);
+        let draws: std::collections::HashSet<Duration> =
+            (0..200).map(|_| backoff.next_delay(1)).collect();
+        assert!(
+            draws.len() > 10,
+            "jitter produced {} distinct delays",
+            draws.len()
+        );
+        for d in draws {
+            assert!(d >= Duration::from_millis(160) && d <= Duration::from_millis(240));
+        }
+    }
+
+    #[test]
+    fn unit_random_is_in_range() {
+        for _ in 0..10_000 {
+            let x = unit_random();
+            assert!((0.0..1.0).contains(&x));
+        }
     }
 }

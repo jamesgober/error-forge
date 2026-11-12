@@ -7,11 +7,17 @@ use std::time::Duration;
 /// Predicate function to determine if an error is retryable
 pub type RetryPredicate<E> = Box<dyn Fn(&E) -> bool + Send + Sync + 'static>;
 
+/// Whether the exponential executors jitter by default: on when the
+/// `jitter` cargo feature is enabled.
+const DEFAULT_JITTER: bool = cfg!(feature = "jitter");
+
 /// Enum to hold different backoff strategy types
 pub enum BackoffStrategy {
     Exponential(ExponentialBackoff),
     Linear(LinearBackoff),
     Fixed(FixedBackoff),
+    /// Any [`Backoff`], set with [`RetryExecutor::with_backoff`].
+    Custom(Box<dyn Backoff>),
 }
 
 impl BackoffStrategy {
@@ -20,6 +26,7 @@ impl BackoffStrategy {
             BackoffStrategy::Exponential(b) => b.next_delay(attempt),
             BackoffStrategy::Linear(b) => b.next_delay(attempt),
             BackoffStrategy::Fixed(b) => b.next_delay(attempt),
+            BackoffStrategy::Custom(b) => b.next_delay(attempt),
         }
     }
 }
@@ -36,11 +43,19 @@ impl<E> RetryExecutor<E>
 where
     E: std::error::Error + 'static,
 {
-    /// Create a new retry executor with an exponential backoff strategy
+    /// Create a new retry executor with an exponential backoff strategy.
+    ///
+    /// Delays start at 100 ms and double each attempt, up to 30 s. With
+    /// the `jitter` cargo feature on, each delay is jittered by ±20%
+    /// (see [`ExponentialBackoff::with_jitter`]) so retriers across a
+    /// fleet do not wake in step; use [`with_jitter`](Self::with_jitter)
+    /// or [`with_backoff`](Self::with_backoff) to choose explicitly.
     pub fn new_exponential() -> Self {
         Self {
             max_retries: 3,
-            backoff: BackoffStrategy::Exponential(ExponentialBackoff::default()),
+            backoff: BackoffStrategy::Exponential(
+                ExponentialBackoff::default().with_jitter(DEFAULT_JITTER),
+            ),
             retry_if: None,
             _marker: PhantomData,
         }
@@ -69,6 +84,50 @@ where
     /// Set the maximum number of retries
     pub fn with_max_retries(mut self, max_retries: usize) -> Self {
         self.max_retries = max_retries;
+        self
+    }
+
+    /// Use `backoff` for the delay before each retry, replacing the
+    /// built-in schedule. Any [`Backoff`] works, including a configured
+    /// [`ExponentialBackoff`] (initial delay, factor, cap, jitter).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use error_forge::recovery::{ExponentialBackoff, RetryExecutor};
+    ///
+    /// let executor = RetryExecutor::<std::io::Error>::new_exponential().with_backoff(
+    ///     ExponentialBackoff::new()
+    ///         .with_initial_delay(1)
+    ///         .with_max_delay(5)
+    ///         .with_jitter(true),
+    /// );
+    /// let result = executor.retry(|| Ok::<_, std::io::Error>(7));
+    /// assert_eq!(result.unwrap(), 7);
+    /// ```
+    #[must_use]
+    pub fn with_backoff(mut self, backoff: impl Backoff) -> Self {
+        self.backoff = BackoffStrategy::Custom(Box::new(backoff));
+        self
+    }
+
+    /// Turn ±20% jitter on or off for an exponential executor (see
+    /// [`ExponentialBackoff::with_jitter`]). Has no effect on linear,
+    /// fixed, or custom backoff.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use error_forge::recovery::RetryExecutor;
+    ///
+    /// let executor = RetryExecutor::<std::io::Error>::new_exponential().with_jitter(true);
+    /// assert!(executor.retry(|| Ok::<_, std::io::Error>(())).is_ok());
+    /// ```
+    #[must_use]
+    pub fn with_jitter(mut self, jitter: bool) -> Self {
+        if let BackoffStrategy::Exponential(backoff) = &mut self.backoff {
+            *backoff = backoff.clone().with_jitter(jitter);
+        }
         self
     }
 
@@ -162,6 +221,7 @@ where
 pub struct RetryPolicy {
     max_retries: usize,
     backoff_type: BackoffType,
+    jitter: bool,
 }
 
 /// Available backoff types for retry policy
@@ -177,6 +237,7 @@ impl RetryPolicy {
         Self {
             max_retries: 3,
             backoff_type: BackoffType::Exponential,
+            jitter: DEFAULT_JITTER,
         }
     }
 
@@ -185,6 +246,7 @@ impl RetryPolicy {
         Self {
             max_retries: 3,
             backoff_type: BackoffType::Linear,
+            jitter: DEFAULT_JITTER,
         }
     }
 
@@ -193,6 +255,7 @@ impl RetryPolicy {
         Self {
             max_retries: 3,
             backoff_type: BackoffType::Fixed(delay_ms),
+            jitter: DEFAULT_JITTER,
         }
     }
 
@@ -202,13 +265,33 @@ impl RetryPolicy {
         self
     }
 
+    /// Turn ±20% jitter on or off for an exponential policy (see
+    /// [`ExponentialBackoff::with_jitter`]). On by default with the
+    /// `jitter` cargo feature, off without it. Has no effect on linear
+    /// or fixed backoff.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use error_forge::recovery::RetryPolicy;
+    ///
+    /// let policy = RetryPolicy::new_exponential().with_jitter(true);
+    /// let result: Result<(), std::io::Error> = policy.retry(|| Ok(()));
+    /// assert!(result.is_ok());
+    /// ```
+    #[must_use]
+    pub fn with_jitter(mut self, jitter: bool) -> Self {
+        self.jitter = jitter;
+        self
+    }
+
     /// Create a retry executor for the given error type
     pub fn executor<E>(&self) -> RetryExecutor<E>
     where
         E: std::error::Error + 'static,
     {
         let executor = match self.backoff_type {
-            BackoffType::Exponential => RetryExecutor::new_exponential(),
+            BackoffType::Exponential => RetryExecutor::new_exponential().with_jitter(self.jitter),
             BackoffType::Linear => RetryExecutor::new_linear(),
             BackoffType::Fixed(delay_ms) => RetryExecutor::new_fixed(delay_ms),
         };

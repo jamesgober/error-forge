@@ -1,16 +1,11 @@
 [package]
 name = "error-forge"
-# 1.0.0 (2026-05-18) — stable API. Public surface frozen under
-# SemVer for the entire 1.x line. See docs/STABILITY.md for the
-# binding contract and docs/API-FREEZE-AUDIT.md for the surface
-# manifest. Major changes vs 0.9.x: `group!` macro rewritten
-# (requires `: ForgeError` on wrapped types), `CircuitBreaker`
-# switched to `parking_lot::Mutex` (no poisoning), hook callback
-# widened to `Box<dyn Fn>`, `#[non_exhaustive]` on several
-# public types, `Result<T>` deprecated in favour of `AppResult<T>`,
-# `register_error_hook` (non-try) deprecated, `rand` gated behind
-# new `jitter` feature.
-version = "1.1.0"
+# Stable API since 1.0.0: the public surface is frozen under SemVer
+# for the 1.x line. See docs/STABILITY.md for the binding contract and
+# docs/API-FREEZE-AUDIT.md for the surface manifest. The circuit
+# breaker uses `std::sync::Mutex` (poisoning ignored) since 1.1.0, and
+# jitter needs no dependency since 1.2.0.
+version = "1.2.0"
 edition = "2021"
 # MSRV. The crate uses `io::Error::other` (stabilised 1.74),
 # `Mutex::new()` in const context (1.63 — fine), and Cargo lockfile
@@ -65,7 +60,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 # third-party `pastey`, and before that `paste`). The `derive` feature
 # below turns on its `#[derive(ModError)]`, which brings in `syn`,
 # `quote` and `proc-macro2`.
-error-forge-derive = { version = "1.1.0", path = "./error-forge-derive", default-features = false }
+error-forge-derive = { version = "1.2.0", path = "./error-forge-derive", default-features = false }
 # Floors below are checked by the `minimal-versions` CI job: `serde`
 # 1.0.157 is the first release whose derive builds alongside the
 # `syn` 1 floor of `error-forge-derive`, `log` 0.4.4 the first whose
@@ -75,12 +70,6 @@ serde = { version = "1.0.157", optional = true, features = ["derive"] }
 log = { version = "0.4.4", optional = true }
 tracing = { version = "0.1.6", optional = true }
 async-trait = { version = "0.1.74", optional = true }
-# `rand` is only used to add ±20% jitter to `ExponentialBackoff` when
-# the caller opts in. Gated behind the `jitter` feature so users who
-# never call `ExponentialBackoff::with_jitter(true)` don't pay for
-# `rand`'s transitive deps (`getrandom`, `rand_core`, `rand_chacha`,
-# `ppv-lite86`).
-rand = { version = "0.8.5", optional = true }
 
 [features]
 default = []
@@ -97,10 +86,11 @@ serde = ["dep:serde"]
 # them keep resolving (removing a feature is a breaking change).
 console = []
 backtrace = []
-# Enables ±20% jitter in `recovery::ExponentialBackoff::with_jitter`.
-# Pulls in `rand` for non-cryptographic random delays. Off by
-# default — backoff still works without it, jitter is a no-op.
-jitter = ["dep:rand"]
+# Turns ±20% jitter on by default for the exponential `RetryExecutor`
+# and `RetryPolicy`. Since 1.2.0 jitter itself needs no dependency (an
+# in-crate generator), so `ExponentialBackoff::with_jitter` works with
+# or without this feature.
+jitter = []
 log = ["dep:log"]
 tracing = ["dep:tracing"]
 registry = []
