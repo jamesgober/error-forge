@@ -138,7 +138,7 @@ Patch release for `error-forge` and `error-forge-derive` (both `1.0.1`). Bug fix
 - `error-forge-derive`: `#[derive(ModError)]` on a union now reports a `compile_error!` at the `union` keyword instead of panicking inside the proc macro.
 - `error-forge-derive`: `#[derive(ModError)]` no longer generates code that fails to compile ("argument never used" / "named argument never used") for variants with fields that have no `#[error_display]`, or whose display string does not mention every field. Only the fields the string references are passed to `format!`. Strings that compiled before render the same output.
 - `docs/API.md` examples compile and pass. The file had carried a stale second half since `0.9.7` (starting mid code block) that documented APIs which do not exist (`ErrorMetadata`, `register_url_format`, `with_success_threshold`, async `retry`), listed the removed `thread-safety` feature and `AppError::with_async_context`, and grouped `io::Error` directly. Those sections are replaced by working examples for hooks, logging, context, error codes, collection, backoff, retry, the circuit breaker, `ForgeErrorRecovery` and `AsyncForgeError`. Every `rust` block in the file now runs as a doctest under `cargo test --all-features`.
-- The `[1.0.0]` CHANGELOG entry links its release notes to the v1.0.0 GitHub release. It pointed at `.dev/release/v1.0.0.md`, which is git-ignored and does not exist in the repository or the published crate.
+- The `[1.0.0]` CHANGELOG entry links its release notes to the v1.0.0 GitHub release. It pointed at a file that does not exist in the repository or the published crate.
 
 ## [1.0.0] - 2026-05-18
 
@@ -155,7 +155,6 @@ Stable API. The public surface is locked under SemVer for the entire `1.x` line 
 - **`CONTRIBUTING.md`** — contributor workflow, CI gates, code style, banned terms.
 - **`RELEASING.md`** — codified release procedure with the derive-first publish order documented.
 - **`CODEOWNERS`** — single-maintainer default.
-- **`.dev/DIRECTIVES.md`** and **`.dev/ROADMAP.md`** — internal workflow rules and outstanding-work tracker (git-ignored).
 - **`.github/dependabot.yml`** — weekly grouped updates for `cargo` and `github-actions` ecosystems with the `dtolnay/rust-toolchain` tag-format workaround.
 - **`.github/PULL_REQUEST_TEMPLATE.md`** + `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md`.
 - **`deny.toml`** — license allow-list, wildcard ban, `crates.io`-only sources.
@@ -204,7 +203,6 @@ Cleanup release. Drops the deprecated `atty` dependency, prunes a dead feature f
 - `MSRV` badge in `README.md`.
 - `cargo audit` CI job that runs the RustSec advisory database against every push. The job declares `permissions: { contents: read, checks: write }` so the `rustsec/audit-check` action can post findings as GitHub Check Runs without hitting `Resource not accessible by integration`.
 - `#[doc(hidden)] pub mod __private` in `lib.rs` re-exporting `pastey` so that `define_errors!` expansions in downstream crates do not require the user to add the dep manually.
-- `.dev/release/v0.9.8.md` release note describing the full cleanup scope.
 
 ### Changed
 - **`Cargo.toml` description rewritten without banned terms** (`comprehensive`, `robust`). The new text reads: "Pragmatic Rust error-handling framework with stable error metadata, contextual diagnostics, optional async support, and synchronous recovery primitives (retry, circuit-breaker, backoff). Optional `#[derive(ModError)]`, declarative `define_errors!`, and feature-gated logging / tracing / serde adapters."

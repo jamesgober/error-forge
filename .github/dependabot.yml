@@ -18,8 +18,8 @@ updates:
           - "minor"
           - "patch"
     # Ignore major bumps that require source-level migration. They
-    # come back as candidates for the next minor release (tracked
-    # in `.dev/ROADMAP.md`), not as auto-applied PRs.
+    # come back as candidates for the next minor release, not as
+    # auto-applied PRs.
     ignore:
       # `rand 0.10` renamed `thread_rng()` to `rng()` and shifted
       # `Rng::gen_range` signature. Migration is intentional — see

@@ -82,5 +82,5 @@ dep cannot be removed or worked around.
 ## Acknowledgements
 
 Reporters who help us fix issues responsibly are credited in
-the release-notes file (`.dev/release/vX.Y.Z.md`) and in the
+the release notes and in the
 GitHub release announcement, unless they request anonymity.
